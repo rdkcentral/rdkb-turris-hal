@@ -1,0 +1,17 @@
+
+hal:
+- remove arch directory
+- move Makefile to Makefile.orig
+- add autogen.sh
+- add configure.ac
+- add Makefile.am
+- touch AUTHORS
+- touch ChangeLog
+- touch NEWS
+- touch README
+- add source/Makefile.am
+- add source/cm/Makefile.am
+- add source/moca/Makefile.am
+- add source/mta/Makefile.am
+- add source/wifi/Makefile.am
+

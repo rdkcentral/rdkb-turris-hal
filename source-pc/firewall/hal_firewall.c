@@ -1897,8 +1897,6 @@ int BasicRouting_Wan2Lan_SetupConnection()
 	system("iptables -t nat -F prerouting_mgmt_override");
 	sprintf(str,"%s%s%s%s%s%s%s","iptables -t nat -I prerouting_mgmt_override -s ",lan_ipaddr,"/",lan_netmask," -d ",lan_ipaddr," -p tcp --dport 80 -j ACCEPT");
 	system(str);
-	sprintf(str,"%s%s%s%s%s%s%s","iptables -t nat -A prerouting_mgmt_override -s ",wan_ipaddr,"/",wan_netmask," -d ",wan_ipaddr," -j ACCEPT");
-	system(str);
         return 0;
 }
 

@@ -630,9 +630,9 @@ void KillHostapd_2g(int ssidIndex)
         system("ps -eaf | grep hostapd0.conf | grep -v grep | awk '{print $2}' | xargs kill -9");
         system("sleep 2");
         system("ps -eaf | grep hostapd4.conf | grep -v grep | awk '{print $2}' | xargs kill -9");
-        system("rmmod rtl8812au");
+        system("rmmod rtl8812au && rmmod 88x2bu");
         system("sleep 3");
-        system("modprobe rtl8812au");
+        system("modprobe rtl8812au && modprobe 88x2bu");
         system("sleep 5");
 	sprintf(buf,"%s%s","rm /var/run/hostapd/",interface_name);
 	system(buf);
@@ -657,9 +657,9 @@ void KillHostapd_xfinity_2g(int ssidIndex)
         system("ps -eaf | grep hostapd4.conf | grep -v grep | awk '{print $2}' | xargs kill -9");
         system("sleep 2");
         system("ps -eaf | grep hostapd0.conf | grep -v grep | awk '{print $2}' | xargs kill -9");
-        system("rmmod rtl8812au");
+        system("rmmod rtl8812au && rmmod 88x2bu");
         system("sleep 3");
-        system("modprobe rtl8812au");
+        system("modprobe rtl8812au && modprobe 88x2bu");
         system("sleep 5");
 	sprintf(buf,"%s%s","rm /var/run/hostapd/",interface_name);
 	system(buf);
@@ -706,9 +706,9 @@ void KillHostapd_5g(int ssidIndex)
 	system("ps -eaf | grep hostapd1.conf | grep -v grep | awk '{print $2}' | xargs kill -9");
 	system("sleep 2");
 	system("ps -eaf | grep hostapd5.conf | grep -v grep | awk '{print $2}' | xargs kill -9");
-	system("rmmod rtl8812au");
+	system("rmmod rtl8812au && rmmod 88x2bu");
 	system("sleep 3");
-	system("modprobe rtl8812au");
+	system("modprobe rtl8812au && modprobe 88x2bu");
 	system("sleep 5");
 	sprintf(buf,"%s%s","rm /var/run/hostapd/",interface_name);
 	system(buf);
@@ -732,9 +732,9 @@ void KillHostapd_xfinity_5g(int ssidIndex)
 	system("ps -eaf | grep hostapd5.conf | grep -v grep | awk '{print $2}' | xargs kill -9");
 	system("sleep 2");
 	system("ps -eaf | grep hostapd1.conf | grep -v grep | awk '{print $2}' | xargs kill -9");
-	system("rmmod rtl8812au");
+	system("rmmod rtl8812au && rmmod 88x2bu");
 	system("sleep 3");
-	system("modprobe rtl8812au");
+	system("modprobe rtl8812au && modprobe 88x2bu");
 	system("sleep 5");
 	sprintf(buf,"%s%s","rm /var/run/hostapd/",interface_name);
 	system(buf);
@@ -809,9 +809,9 @@ void defaultwifi_restarting_process()
 	{
 		system("killall hostapd");
 		sleep(1);
-		system("rmmod rtl8812au");
+		system("rmmod rtl8812au && rmmod 88x2bu");
 		sleep(1);
-		system("modprobe rtl8812au");
+		system("modprobe rtl8812au && modprobe 88x2bu");
 		sleep(1);
 		privatewifi_5g(1);
 		privatewifi_2g(0);
@@ -867,9 +867,9 @@ int hostapd_restarting_process(int apIndex)
 		{
 			system("killall hostapd");
 			sleep(1);
-			system("rmmod rtl8812au");
+			system("rmmod rtl8812au && rmmod 88x2bu");
 			sleep(1);
-			system("modprobe rtl8812au");
+			system("modprobe rtl8812au && modprobe 88x2bu");
 			sleep(1);
 			privatewifi_5g(1);
 			privatewifi_2g(0);
@@ -5213,6 +5213,10 @@ INT wifi_startHostApd()
 {
 	WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
 	defaultwifi_restarting_process();
+	system("echo 1 > /tmp/Get2gssidEnable.txt");
+	system("echo 1 > /tmp/Get5gssidEnable.txt");
+	system("echo 1 > /tmp/GetPub2gssidEnable.txt");
+	system("echo 1 > /tmp/GetPub5gssidEnable.txt");
 	WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 	return RETURN_OK;
 }
@@ -5222,6 +5226,14 @@ INT wifi_stopHostApd()
 {
 	WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
         system("killall hostapd");
+	system("ifconfig wlan0 down");
+	system("ifconfig wlan1 down");
+	system("ifconfig wlan2 down");
+	system("ifconfig wlan3 down");
+	system("echo 0 > /tmp/Get2gssidEnable.txt");
+	system("echo 0 > /tmp/Get5gssidEnable.txt");
+	system("echo 0 > /tmp/GetPub2gssidEnable.txt");
+	system("echo 0 > /tmp/GetPub5gssidEnable.txt");
 	WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 	return RETURN_OK;	
 }
@@ -7133,12 +7145,7 @@ INT wifi_pushRxChainMask(INT radioIndex)
 
 INT wifi_pushSSID(INT apIndex, CHAR *ssid)
 {
-    char cmd[128];
-    char buf[1024];
-    
-	snprintf(cmd, sizeof(cmd), "iwconfig %s%d essid \"%s\"",AP_PREFIX, apIndex, ssid);
-    _syscmd(cmd, buf, sizeof(buf));
-
+    wifi_setSSIDName(apIndex,ssid);
     return RETURN_OK;
 }
 

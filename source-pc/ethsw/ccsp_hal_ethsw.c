@@ -41,13 +41,6 @@
 
     ---------------------------------------------------------------
 
-    copyright:
-
-        Cisco Systems, Inc., 2014
-        All Rights Reserved.
-
-    ---------------------------------------------------------------
-
     description:
 
         This is the stub implementation of Ethernet Switch control.

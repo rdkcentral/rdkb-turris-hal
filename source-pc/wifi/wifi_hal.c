@@ -6041,9 +6041,10 @@ INT wifi_setApSecurityPreSharedKey(INT apIndex, CHAR *preSharedKey)
             return RETURN_ERR;
         strcpy(params.name,"wpa_passphrase");
         strcpy(params.value,preSharedKey);
-        if(strlen(preSharedKey)<8 || strlen(preSharedKey)>63)
+        //REFPLTB-290 PreShared key set fails for 64 character key. So fix is added by changing 63 to 64
+        if(strlen(preSharedKey)<8 || strlen(preSharedKey)>64)
         {
-                wifi_dbg_printf("\nCannot Set Preshared Key length of preshared key should be 8 to 63 chars\n");
+                wifi_dbg_printf("\nCannot Set Preshared Key length of preshared key should be 8 to 64 chars\n");
                 return RETURN_ERR;
         }
         else

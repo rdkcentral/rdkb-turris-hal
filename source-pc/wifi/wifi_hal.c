@@ -1815,48 +1815,116 @@ INT wifi_setRadioEnable(INT radioIndex, BOOL enable)		//RDKB
 INT wifi_setRadioEnable(INT radioIndex, BOOL enable)            //RDKB
 {
 	WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-        char IfName[MAX_BUF_SIZE]={'\0'};
-        char HConf_file[MAX_BUF_SIZE]={'\0'};
-        char buf[MAX_BUF_SIZE]={'\0'};
-        char cmd[MAX_CMD_SIZE]={'\0'};
-        char ssid_cur_value[50] ={0};
-        BOOL GetssidEnable;
+	char IfName[MAX_BUF_SIZE]={'\0'};
+	char HConf_file[MAX_BUF_SIZE]={'\0'};
+	char buf[MAX_BUF_SIZE]={'\0'};
+	char cmd[MAX_CMD_SIZE]={'\0'};
+	char ssid_cur_value[50] ={0};
+	char Alias_Interface_name[50] ={0};
+	int T_g = 0,F_g = 0;
+	BOOL GetssidEnable;
 
-        wifi_getSSIDEnable(radioIndex,&GetssidEnable);
-        if(radioIndex == 0)
-        {
-                sprintf(buf,"%s%d%s","echo ",GetssidEnable," > /tmp/Get2gssidEnable.txt");
-                system("rm /tmp/Get2gRadioEnable.txt");
-                sprintf(cmd,"%s%d%s","echo ",enable," > /tmp/Get2gRadioEnable.txt");
-        }
-        else if(radioIndex == 1)
-        {
-                sprintf(buf,"%s%d%s","echo ",GetssidEnable," > /tmp/Get5gssidEnable.txt");
-                system("rm /tmp/Get5gRadioEnable.txt");
-                sprintf(cmd,"%s%d%s","echo ",enable," > /tmp/Get5gRadioEnable.txt");
-        }
-        system(buf);
-        system(cmd);
+	wifi_getSSIDEnable(radioIndex,&GetssidEnable);
+	if(radioIndex == 0)
+	{
+		sprintf(buf,"%s%d%s","echo ",GetssidEnable," > /tmp/Get2gssidEnable.txt");
+		system("rm /tmp/Get2gRadioEnable.txt");
+		sprintf(cmd,"%s%d%s","echo ",enable," > /tmp/Get2gRadioEnable.txt");
+	}
+	else if(radioIndex == 1)
+	{
+		sprintf(buf,"%s%d%s","echo ",GetssidEnable," > /tmp/Get5gssidEnable.txt");
+		system("rm /tmp/Get5gRadioEnable.txt");
+		sprintf(cmd,"%s%d%s","echo ",enable," > /tmp/Get5gRadioEnable.txt");
+	}
+	system(buf);
+	system(cmd);
+//Getting the current interfaces names and status of radio
+	if(radioIndex == 0)
+	{
+		GetInterfaceName(IfName,"/nvram/hostapd0.conf");
+		GetInterfaceName(Alias_Interface_name,"/nvram/hostapd4.conf");
+	}
+	else
+	{
+		GetInterfaceName(IfName,"/nvram/hostapd1.conf");
+		GetInterfaceName(Alias_Interface_name,"/nvram/hostapd5.conf");
+	}
+	if(_syscmd("cat /tmp/Get2gRadioEnable.txt",buf,sizeof(buf)) == RETURN_ERR)
+	{
+		wifi_dbg_printf("\nError %d:%s:%s\n",__LINE__,__func__,__FILE__);
+		return RETURN_ERR;
+	}
+	T_g=atoi(buf);
+	if(_syscmd("cat /tmp/Get5gRadioEnable.txt",buf,sizeof(buf)) == RETURN_ERR)
+	{
+		wifi_dbg_printf("\nError %d:%s:%s\n",__LINE__,__func__,__FILE__);
+		return RETURN_ERR;
+	}
 
-        sprintf(HConf_file,"%s%d%s","/nvram/hostapd",radioIndex,".conf");
-        GetInterfaceName(IfName,HConf_file);
-        if(enable == FALSE)
-        {
-                sprintf(cmd,"%s%s%s","ifconfig ",IfName," down");
-                system(cmd);
-        }
-        else
-        {
-                if((radioIndex == 0) || (radioIndex == 1))  //if((SSID.Enable == TRUE ) && (Radio.Enable == TRUE)) then bring's up SSID
-                {
-                        if((enable == TRUE) && (GetssidEnable == TRUE))
-                        {
-				hostapd_restarting_process(radioIndex);
-                        }
-                }
-        }
+	F_g=atoi(buf);
+	if(enable == FALSE)
+	{
+		if(radioIndex == 0)
+			system("sed -i 's/ignore_broadcast_ssid=0/ignore_broadcast_ssid=1/g' /nvram/hostapd0.conf");
+		else
+			system("sed -i 's/ignore_broadcast_ssid=0/ignore_broadcast_ssid=1/g' /nvram/hostapd1.conf");
+		hostapd_restarting_process(radioIndex);
+		sleep(3);
+		if((T_g == 0 ) && (F_g == 0))
+		{
+			system("ifconfig wlan0 down");
+			system("ifconfig wlan1 down");
+			system("ifconfig wlan2 down");
+			system("ifconfig wlan3 down");
+		}
+		else
+		{
+			sprintf(cmd,"%s%s%s","ifconfig ",IfName," down");
+			system(cmd);
+			sprintf(cmd,"%s%s%s","ifconfig ",Alias_Interface_name," down");
+			system(cmd);
+		}
+	}
+	else
+	{
+		if((radioIndex == 0) || (radioIndex == 1))  //if((SSID.Enable == TRUE ) && (Radio.Enable == TRUE)) then bring's up SSID
+		{
+			if((T_g == 1 ) && (F_g == 1))
+			{
+				system("sed -i 's/ignore_broadcast_ssid=1/ignore_broadcast_ssid=0/g' /nvram/hostapd0.conf");
+				system("sed -i 's/ignore_broadcast_ssid=1/ignore_broadcast_ssid=0/g' /nvram/hostapd1.conf");
+				if((enable == TRUE) && (GetssidEnable == TRUE))
+				{
+					hostapd_restarting_process(radioIndex);
+				}
+			}
+			else if(T_g == 1)
+			{
+				system("sed -i 's/ignore_broadcast_ssid=1/ignore_broadcast_ssid=0/g' /nvram/hostapd0.conf");
+				if((enable == TRUE) && (GetssidEnable == TRUE))
+				{
+					KillHostapd_2g(radioIndex);
+					KillHostapd_xfinity_2g(radioIndex);
+				}
+			}
+			else if(F_g == 1)
+			{
+				system("sed -i 's/ignore_broadcast_ssid=1/ignore_broadcast_ssid=0/g' /nvram/hostapd1.conf");
+				if((enable == TRUE) && (GetssidEnable == TRUE))
+				{
+					KillHostapd_5g(radioIndex);
+					KillHostapd_xfinity_5g(radioIndex);
+				}
+			}
+			else
+			{
+				wifi_dbg_printf("No Wireless support..Please check with wireless set-up");
+			}
+		}
+	}
 	WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-        return RETURN_OK;
+	return RETURN_OK;
 }
 //Get the Radio enable status
 INT wifi_getRadioStatus(INT radioIndex, BOOL *output_bool)	//RDKB

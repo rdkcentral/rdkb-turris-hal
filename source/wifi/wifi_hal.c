@@ -53,7 +53,7 @@
 #include "wifi_hal.h"
 
 #ifndef AP_PREFIX
-#define AP_PREFIX	"ath"
+#define AP_PREFIX	"wl"
 #endif
 
 #ifndef RADIO_PREFIX
@@ -493,7 +493,8 @@ INT wifi_getRadioChannel(INT radioIndex,ULONG *output_ulong)	//RDKB
 	
 	if(*output_ulong<=0)  {
 		//TODO: SSID is inactive, get channel from wifi config
-		//*output_ulong = 0;		
+                //Hack: return valid value
+		*output_ulong = 1;
 	}	
 	return RETURN_OK;
 }
@@ -2678,4 +2679,156 @@ int main(int argc,char **argv)
 	return 0;
 }
 #endif
+
+INT wifi_setApCsaDeauth(INT apIndex, INT mode)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_setApScanFilter(INT apIndex, INT mode, CHAR *essid)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_pushRadioChannel(INT radioIndex, UINT channel)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_pushRadioChannel2(INT radioIndex, UINT channel, UINT channel_width_MHz, UINT csa_beacon_count)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_getRadioAutoChannelEnable(INT radioIndex, BOOL *output_bool)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_getSSIDNameStatus(INT apIndex, CHAR *output_string)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_getApMacAddressControlMode(INT apIndex, INT *output_filterMode)
+{
+    // TODO Implement me!
+    *output_filterMode = 0;
+    return RETURN_OK;
+}
+
+INT wifi_delApAclDevices(INT apINdex)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_getApAssociatedDeviceStats(INT apIndex, mac_address_t *clientMacAddress, wifi_associated_dev_stats_t *associated_dev_stats, ULLONG *handle)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_getApAssociatedDeviceRxStatsResult(INT radioIndex, mac_address_t *clientMacAddress, wifi_associated_dev_rate_info_rx_stats_t **stats_array, UINT *output_array_size, ULLONG *handle)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_getApAssociatedDeviceTxStatsResult(INT radioIndex, mac_address_t *clientMacAddress, wifi_associated_dev_rate_info_tx_stats_t **stats_array, UINT *output_array_size, ULLONG *handle)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_setRadioStatsEnable(INT radioIndex, BOOL enable)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_getApAssociatedDeviceTidStatsResult(INT radioIndex,  mac_address_t *clientMacAddress, wifi_associated_dev_tid_stats_t *tid_stats,  ULLONG *handle)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex, wifi_associated_dev2_t **associated_dev_array, UINT *output_array_size)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_getRadioChannelStats(INT radioIndex, wifi_channelStats_t *input_output_channelStats_array, INT array_size)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_startNeighborScan(INT apIndex, wifi_neighborScanMode_t scan_mode, INT dwell_time, UINT chan_num, UINT *chan_list)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_getNeighboringWiFiStatus(INT radioIndex, wifi_neighbor_ap2_t **neighbor_ap_array, UINT *output_array_size)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+void wifi_newApAssociatedDevice_callback_register(wifi_newApAssociatedDevice_callback callback_proc)
+{
+    // TODO Implement me!
+    return;
+}
+
+INT wifi_steering_setGroup(UINT steeringgroupIndex, wifi_steering_apConfig_t *cfg_2, wifi_steering_apConfig_t *cfg_5)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_steering_clientSet(UINT steeringgroupIndex, INT apIndex, mac_address_t client_mac, wifi_steering_clientConfig_t *config)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_steering_clientRemove(UINT steeringgroupIndex, INT apIndex, mac_address_t client_mac)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_steering_clientMeasure(UINT steeringgroupIndex, INT apIndex, mac_address_t client_mac)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_steering_clientDisconnect(UINT steeringgroupIndex, INT apIndex, mac_address_t client_mac, wifi_disconnectType_t type, UINT reason)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_steering_eventRegister(wifi_steering_eventCB_t event_cb)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_steering_eventUnregister(void)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
 //<<

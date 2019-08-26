@@ -5917,6 +5917,8 @@ typedef INT ( * wifi_apAuthEvent_callback)(INT apIndex, char *MAC, INT event_typ
 //Callback registration function.
 void wifi_apAuthEvent_callback_register(wifi_apAuthEvent_callback callback_proc);
 
+typedef unsigned long long  u64;
+
 //<< ------------------------------ wifi_ap_hal -----------------------
 
 #else

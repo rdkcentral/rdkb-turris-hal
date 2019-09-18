@@ -6526,7 +6526,7 @@ INT wifi_getApAssociatedDeviceStats(
                  strcpy(dev_stats->cli_rx_bytes,tmp_buf);
         }
 	else
-		print("No Matching stats info");
+		printf("No Matching stats info");
     }
     return RETURN_OK;
 
@@ -6987,6 +6987,12 @@ INT wifi_steering_eventRegister(wifi_steering_eventCB_t event_cb)
 }
 
 INT wifi_steering_eventUnregister(void)
+{
+    // TODO Implement me!
+    return RETURN_ERR;
+}
+
+INT wifi_delApAclDevices(INT apINdex)
 {
     // TODO Implement me!
     return RETURN_ERR;

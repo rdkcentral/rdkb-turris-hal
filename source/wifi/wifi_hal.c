@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <string.h>
 #include "wifi_hal.h"
+#include "wifi_hal_turris.h"
 
 #ifndef AP_PREFIX
 #define AP_PREFIX	"wlan"
@@ -6868,11 +6869,11 @@ INT wifi_getApManagementFramePowerControl(INT wlanIndex, INT *ManagementFramePow
    return RETURN_OK;
 }
 
-INT wifi_setApManagementFramePowerControl(INT wlanIndex, INT *ManagementFramePowerControl)
+INT wifi_setApManagementFramePowerControl(INT wlanIndex, INT dBm)
 {
    return RETURN_OK;
 }
-INT wifi_getRadioDcsChannelMetrics(INT radioIndex,wifi_channelMetrics_t channel_matrix[],size_t size)
+INT wifi_getRadioDcsChannelMetrics(INT radioIndex,wifi_channelMetrics_t *input_output_channelMetrics_array,INT size)
 {
    return RETURN_OK;
 }

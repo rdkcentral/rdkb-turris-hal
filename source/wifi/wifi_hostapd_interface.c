@@ -23,6 +23,7 @@
 #include<malloc.h>
 #include<stdlib.h>
 #include"wifi_hal.h"
+#include"wifi_hal_turris.h"
 
 #ifdef WIFI_DEBUG
 #define wifi_dbg_printf printf

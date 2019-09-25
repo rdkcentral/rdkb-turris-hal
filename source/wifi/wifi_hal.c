@@ -1344,6 +1344,7 @@ INT wifi_getRadioSupportedFrequencyBands(INT radioIndex, CHAR *output_string)	//
 //The output_string is a max length 64 octet string that is allocated by the RDKB code.  Implementations must ensure that strings are not longer than this.
 INT wifi_getRadioOperatingFrequencyBand(INT radioIndex, CHAR *output_string) //Tr181
 {
+/*
 	WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
         char buf[MAX_BUF_SIZE]={'\0'};
         char str[MAX_BUF_SIZE]={'\0'};
@@ -1419,6 +1420,13 @@ INT wifi_getRadioOperatingFrequencyBand(INT radioIndex, CHAR *output_string) //T
         {
                 strcpy(output_string,"5GHz");
         }
+	WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
+	return RETURN_OK;
+*/
+WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+	if (NULL == output_string) 
+		return RETURN_ERR;
+	snprintf(output_string, 64, (radioIndex==0)?"2.4GHz":"5GHz");
 	WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 	return RETURN_OK;
 }
@@ -1684,6 +1692,7 @@ INT wifi_getRadioChannel(INT radioIndex,ULONG *output_ulong)	//RDKB
   
   return RETURN_OK;
 }
+
 //Storing the previous channel value
 INT wifi_storeprevchanval(INT radioIndex)
 {
@@ -2974,12 +2983,18 @@ INT wifi_getBaseBSSID(INT ssidIndex, CHAR *output_string)	//RDKB
         char *ch={'\0'};
         char *ch2={'\0'};
         char buf[1024]={'\0'};
+        char interface[6]={'\0'};
         char *pos;
+
         if (NULL == output_string)
                 return RETURN_ERR;
+	if(ssidIndex == 0)
+		strcpy(interface,"wlan0");
+	else
+		 strcpy(interface,"wlan1");
 
-        
-        sprintf(cmd,"grep 'interface=' %s%d.conf",HOSTAPD_FNAME,ssidIndex);
+       /* 
+        sprintf(cmd,"grep 'interface=' %s%d.conf | head -1",HOSTAPD_FNAME,ssidIndex);
         wifi_dbg_printf("\n%s\n",__func__);
         printf("\ncmd=%s\n",cmd);
         if(_syscmd(cmd,str,sizeof(str)) == RETURN_ERR)
@@ -2996,8 +3011,8 @@ INT wifi_getBaseBSSID(INT ssidIndex, CHAR *output_string)	//RDKB
         }
         else
           wifi_dbg_printf("%s",ch+1);
-
-        sprintf(cmd, "ifconfig -a %s | grep HWaddr", (ch+1));
+*/
+        sprintf(cmd, "ifconfig %s | grep 'HWaddr'", interface);
         if (_syscmd(cmd, buf,sizeof(buf))==RETURN_ERR)
         {
                 return RETURN_ERR;
@@ -3874,7 +3889,7 @@ INT wifi_getApBasicAuthenticationMode(INT apIndex, CHAR *authMode)
 	char AuthenticationMode[50] = {0};
 	int wpa_val;
 	char BeaconType[50] = {0};
-
+  	*authMode = NULL;
 	if((apIndex == 0) || (apIndex == 1) || (apIndex == 4) || (apIndex == 5))
 	{
 		wifi_getApBeaconType(apIndex,BeaconType);
@@ -6535,6 +6550,19 @@ INT wifi_getApAssociatedDeviceStats(
 
 INT wifi_getSSIDNameStatus(INT apIndex, CHAR *output_string)
 {
+    struct params params={"ssid",""};
+    if (NULL == output_string)
+        return RETURN_ERR;
+
+    wifi_hostapdRead(apIndex,&params,output_string);
+    wifi_dbg_printf("\n[%s]: SSID Name is : %s",__func__,output_string);
+    if(output_string==NULL)
+        return RETURN_ERR;
+    else
+        return RETURN_OK;
+
+
+/*
 	WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
         char cmd[1024] =  {0};
         char buf[1024] = {0};
@@ -6548,18 +6576,23 @@ INT wifi_getSSIDNameStatus(INT apIndex, CHAR *output_string)
         {
              return RETURN_ERR;
        	}
+
 	
 	sprintf(HConf_file,"%s%d%s","/nvram/hostapd",apIndex,".conf");
         GetInterfaceName(interface_name,HConf_file);
 
-	sprintf(cmd,"%s%s%s","iw dev ",interface_name," info | grep  -nr 'ssid' | cut -d " " -f2");
+	sprintf(cmd,"%s%s%s","iw dev ",interface_name," info | grep 'ssid' | cut -d ' ' -f2");
         _syscmd(cmd,buf,sizeof(buf));
+	if(strchr(buf,"wlan") == NULL)
+		return RETURN_ERR; 
+
         for(count = 0;buf[count]!='\n';count++)
                 tmp_buf[count] = buf[count]; //ajusting the size
         tmp_buf[count] = '\0';
 
 	strcpy(output_string,tmp_buf);
 	return RETURN_OK;
+*/
 	
 }
 INT wifi_getApMacAddressControlMode(INT apIndex, INT *output_filterMode)

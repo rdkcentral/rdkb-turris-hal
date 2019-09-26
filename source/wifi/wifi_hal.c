@@ -3872,7 +3872,7 @@ INT wifi_getApBasicAuthenticationMode(INT apIndex, CHAR *authMode)
 	char AuthenticationMode[50] = {0};
 	int wpa_val;
 	char BeaconType[50] = {0};
-  	*authMode = NULL;
+  	*authMode = 0;
 	if((apIndex == 0) || (apIndex == 1) || (apIndex == 4) || (apIndex == 5))
 	{
 		wifi_getApBeaconType(apIndex,BeaconType);

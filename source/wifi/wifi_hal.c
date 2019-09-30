@@ -2094,37 +2094,12 @@ INT wifi_setRadioDfsRefreshPeriod(INT radioIndex, ULONG seconds) //Tr181
 //The output_string is a max length 64 octet string that is allocated by the RDKB code.  Implementations must ensure that strings are not longer than this.
 INT wifi_getRadioOperatingChannelBandwidth(INT radioIndex, CHAR *output_string) //Tr181
 {
-        WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-	struct params params={"vht_oper_chwidth",""};
-	char output_buf[8]={0};
-        char bw_value[10];	
-	wifi_hostapdRead(radioIndex,&params,output_buf);
-	readBandWidth(radioIndex,bw_value);
-	if (NULL == output_string) 
-			return RETURN_ERR;
-        
-	if(strstr (output_buf,"0") != NULL )
-	{
-		strcpy(output_string,bw_value);
-	}
-	else if (strstr (output_buf,"1") != NULL)
-	{
-		strcpy(output_string,"80MHz");
-	}
-	else if (strstr (output_buf,"2") != NULL)
-	{
-		strcpy(output_string,"160MHz");
-	}
-	else if (strstr (output_buf,"3") != NULL)
-	{
-		strcpy(output_string,"80+80");
-	}
-        else
-        {
-                strcpy(output_string,"Auto");
-        }
-        WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-	return RETURN_OK;
+       WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+       if (NULL == output_string)
+                return RETURN_ERR;
+        snprintf(output_string, 64, (radioIndex==0)?"20MHz":"40MHz");
+       WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
+        return RETURN_OK;
 }
 
 //Set the Operating Channel Bandwidth.
@@ -3712,6 +3687,13 @@ INT wifi_getApWpaEncryptionMode(INT apIndex, CHAR *output_string)
 	struct params beacon={"beaconType",""};
 	struct params params={"wpa_pairwise",""};
 	char buf[32];
+	struct params wpa_mode={"wpa",""};
+        wifi_hostapdRead(apIndex,&wpa_mode,buf);
+        if(strcmp(buf,"0")==0)
+        {
+                printf("wpa_mode is %s ......... \n",buf);
+                return RETURN_ERR;
+        }
 
 	if (NULL == output_string)
 		return RETURN_ERR;
@@ -3873,6 +3855,16 @@ INT wifi_getApBasicAuthenticationMode(INT apIndex, CHAR *authMode)
 	int wpa_val;
 	char BeaconType[50] = {0};
   	*authMode = 0;
+	char buf[32];
+        struct params wpa_mode={"wpa",""};
+        wifi_hostapdRead(apIndex,&wpa_mode,buf);
+
+        if(strcmp(buf,"0")==0)
+        {
+                printf("wpa_mode is %s ......... \n",buf);
+                return RETURN_ERR;
+        }
+
 	if((apIndex == 0) || (apIndex == 1) || (apIndex == 4) || (apIndex == 5))
 	{
 		wifi_getApBeaconType(apIndex,BeaconType);
@@ -4849,6 +4841,14 @@ INT wifi_setApSecurityModeEnabled(INT apIndex, CHAR *encMode)
 // PSK Key of 8 to 63 characters is considered an ASCII string, and 64 characters are considered as HEX value
 INT wifi_getApSecurityPreSharedKey(INT apIndex, CHAR *output_string)
 {	
+	char buf[32];
+        struct params wpa_mode={"wpa",""};
+        wifi_hostapdRead(apIndex,&wpa_mode,buf);
+        if(strcmp(buf,"0")==0)
+        {
+                printf("wpa_mode is %s ......... \n",buf);
+                return RETURN_ERR;
+        }
 //	snprintf(output_string, 64, "E4A7A43C99DFFA57");
 	struct params params={"wpa_passphrase",""};
 	wifi_dbg_printf("\nFunc=%s\n",__func__);
@@ -4900,6 +4900,14 @@ INT wifi_getApSecurityKeyPassphrase(INT apIndex, CHAR *output_string)
 {	
     struct params params={"wpa_passphrase",""};
     wifi_dbg_printf("\nFunc=%s\n",__func__);
+    char buf[32];
+    struct params wpa_mode={"wpa",""};
+    wifi_hostapdRead(apIndex,&wpa_mode,buf);
+    if(strcmp(buf,"0")==0)
+    {
+           printf("wpa_mode is %s ......... \n",buf);
+           return RETURN_ERR;
+    }
     if (NULL == output_string)
     return RETURN_ERR;
     wifi_hostapdRead(apIndex,&params,output_string);
@@ -6200,48 +6208,21 @@ INT wifi_setApSecurityMFPConfig(INT apIndex, CHAR *MfpConfig)
 }
 INT wifi_getRadioAutoChannelEnable(INT radioIndex, BOOL *output_bool)
 {
-	//	*output_bool=FALSE;
-	char buf[256] = {0};
-	char str_channel[256] = {0};
-	int count = 0;
-	struct params params={"channel",""};
-	char output[50]={'\0'};
-	FILE *fp = NULL;
-	
+       WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+       struct params params={"channel",""};
+       char output[50]={'\0'};
 
-	wifi_hostapdRead(radioIndex,&params,output);
+       wifi_hostapdRead(radioIndex,&params,output);
+       if(strcmp(output,"0")==0)
+        {
+                printf("channel is %s .........\n",output);
+                *output_bool = TRUE;
+        }
+        else
+                *output_bool = FALSE;
 
-	if(radioIndex == 0)
-	{
-		fp = fopen("/var/prevchanval2G_AutoChannelEnable","r");
-	}
-	else if(radioIndex == 1)
-	{
-		fp = fopen("/var/prevchanval5G_AutoChannelEnable","r");
-	}
-	if(fp == NULL)
-	{
-		*output_bool = FALSE;
-	}
-	else
-	{
-		if(fgets(buf,sizeof(buf),fp) != NULL)
-		{
-			for(count = 0;buf[count]!='\n';count++)
-				str_channel[count] = buf[count];
-			str_channel[count] = '\0';
-			if(strcmp(output,str_channel) == 0)
-			{
-				*output_bool = TRUE;
-			}
-			else
-			{
-				*output_bool = FALSE;
-			}
-		}
-		fclose(fp);
-	}
-	return RETURN_OK;
+       WIFI_ENTRY_EXIT_DEBUG("Exit %s:%d\n",__func__, __LINE__);
+       return RETURN_OK;
 }
 
 INT wifi_getRouterEnable(INT wlanIndex, BOOL *enabled)

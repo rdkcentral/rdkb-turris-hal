@@ -26,7 +26,7 @@ typedef unsigned long long  u64;
 configuration required for Factory Reset*/
 #define HOSTAPD_FNAME "/nvram/hostapd"
 #define SEC_FNAME "/etc/sec_file.txt"
-#define BW_FNAME "/etc/bw_file.txt"
+#define BW_FNAME "/nvram/bw_file.txt"
 
 enum hostap_names
 {

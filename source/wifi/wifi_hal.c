@@ -1674,8 +1674,7 @@ INT wifi_getRadioChannel(INT radioIndex,ULONG *output_ulong)	//RDKB
 {
 	WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
         char cmd[1024] =  {0};
-        char buf[4] = {0};
-        char tmp_buf[512] = {0};
+        char buf[8] = {0};
 
         char HConf_file[MAX_BUF_SIZE] = {'\0'};
         int count = 0;
@@ -6192,10 +6191,13 @@ INT wifi_pushRxChainMask(INT radioIndex)
 
 INT wifi_pushSSID(INT apIndex, CHAR *ssid)
 {
+    INT status;
+
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    wifi_setSSIDName(apIndex,ssid);
+    status = wifi_setSSIDName(apIndex,ssid);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-    return RETURN_OK;
+
+    return status;
 }
 
 INT wifi_pushSsidAdvertisementEnable(INT apIndex, BOOL enable)

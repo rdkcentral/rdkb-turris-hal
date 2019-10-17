@@ -77,6 +77,7 @@
 #define WIFI_ENTRY_EXIT_DEBUG(format,args...) printf("")
 #endif
 #define CONFIG_PREFIX "/nvram/hostapd"
+#define ACL_PREFIX "/tmp/hostapd-acl"
 
 static int _syscmd(char *cmd, char *retBuf, int retBufSize)
 {
@@ -1833,7 +1834,14 @@ INT wifi_setApRadioIndex(INT apIndex, INT radioIndex)
 // Get the ACL MAC list per AP
 INT wifi_getApAclDevices(INT apIndex, CHAR *macArray, UINT buf_size) 
 {		
-	snprintf(macArray, buf_size, "11:22:33:44:55:66\n11:22:33:44:55:67\n");		
+	char acl_file[MAX_BUF_SIZE] = {0};
+        char cmd[MAX_CMD_SIZE]={'\0'};
+        int ret = 0;
+        sprintf(acl_file,"%s%d",ACL_PREFIX,apIndex);
+	sprintf(cmd, "cat %s", acl_file);
+	ret = _syscmd(cmd,macArray,buf_size);
+        if (ret != 0)
+                return RETURN_ERR;
 	return RETURN_OK;
 }
 	
@@ -1852,16 +1860,45 @@ INT wifi_getApDevicesAssociated(INT apIndex, CHAR *macArray, UINT buf_size)
 //DeviceMacAddress is in XX:XX:XX:XX:XX:XX format
 INT wifi_addApAclDevice(INT apIndex, CHAR *DeviceMacAddress) 
 {
-	//Apply instantly		
-	return RETURN_ERR;
+    char cmd[MAX_CMD_SIZE]={'\0'};
+    char buf[MAX_BUF_SIZE]={'\0'};
+    char acl_file[MAX_BUF_SIZE] = {0};
+    int ret = 0;
+
+    sprintf(acl_file,"%s%d",ACL_PREFIX,apIndex);    
+
+    sprintf(cmd, "cat %s | grep \"%s\"", acl_file, DeviceMacAddress);
+    ret = _syscmd(cmd,buf,sizeof(buf));
+
+    if (strlen(buf) == 0) {
+        //Insert
+        sprintf(cmd, "echo \"%s\" >> %s", DeviceMacAddress, acl_file);
+        
+        ret = _syscmd(cmd,buf,sizeof(buf));
+        if (ret != 0)
+                return RETURN_ERR;
+         }
+    return RETURN_OK;
+
 }
 
 // deletes the mac address from the filter list
 //DeviceMacAddress is in XX:XX:XX:XX:XX:XX format
 INT wifi_delApAclDevice(INT apIndex, CHAR *DeviceMacAddress)        
 {
-	//Apply instantly
-	return RETURN_ERR;
+    char cmd[MAX_CMD_SIZE]={'\0'};
+    char buf[MAX_BUF_SIZE]={'\0'};
+    char acl_file[MAX_BUF_SIZE] = {0};
+    int ret = 0;
+
+    sprintf(acl_file,"%s%d",ACL_PREFIX,apIndex);
+    sprintf(cmd, "sed -i '/%s/d' %s",DeviceMacAddress, acl_file);
+    ret = _syscmd(cmd,buf,sizeof(buf));
+    if (ret != 0)
+                return RETURN_ERR;
+
+
+	return RETURN_OK;
 }
 
 // outputs the number of devices in the filter list
@@ -1913,8 +1950,27 @@ INT wifi_kickApAclAssociatedDevices(INT apIndex, BOOL enable)
 // sets the mac address filter control mode.  0 == filter disabled, 1 == filter as whitelist, 2 == filter as blacklist
 INT wifi_setApMacAddressControlMode(INT apIndex, INT filterMode)
 {
-	//apply instantly
-	return RETURN_OK;
+     char buf[MAX_BUF_SIZE] = {0};
+     char cmd[MAX_CMD_SIZE] = {0};
+     char config_file[MAX_BUF_SIZE] = {0};
+     char acl_file[MAX_BUF_SIZE] = {0};
+     struct params list[2];
+     int items = 1;
+     list[0].name = "macaddr_acl";
+     sprintf(buf, "%d", filterMode);
+     list[0].value = buf ;
+
+     if (filterMode == 1) {
+         sprintf(acl_file,"%s%d",ACL_PREFIX,apIndex); 
+         list[1].name = "accept_mac_file";
+         list[1].value = acl_file;
+         items = 2;
+     }
+
+
+     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
+     wifi_hostapdWrite(config_file, &list, items);
+     return RETURN_OK;
 }
 
 // enables internal gateway VLAN mode.  In this mode a Vlan tag is added to upstream (received) data packets before exiting the Wifi driver.  VLAN tags in downstream data are stripped from data packets before transmission.  Default is FALSE. 
@@ -2056,20 +2112,35 @@ INT wifi_getApStatus(INT apIndex, CHAR *output_string)
 
 //Indicates whether or not beacons include the SSID name.
 // outputs a 1 if SSID on the AP is enabled, else ouputs 0
-INT wifi_getApSsidAdvertisementEnable(INT apIndex, BOOL *output_bool) 
+INT wifi_getApSsidAdvertisementEnable(INT apIndex, BOOL *output) 
 {
 	//get the running status
-	if(!output_bool)
-		return RETURN_ERR;
-	*output_bool=TRUE;	
+        char config_file[MAX_BUF_SIZE] = {0};
+        char buf[MAX_BUF_SIZE] = {0};
+        if (!output)
+                return RETURN_ERR;
+
+        sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
+        wifi_hostapdRead(config_file, "ignore_broadcast_ssid", buf, 64);
+	*output = (strncmp("0",buf,1) == 0) ;	
 	return RETURN_OK;	
 }
 
 // sets an internal variable for ssid advertisement.  Set to 1 to enable, set to 0 to disable
 INT wifi_setApSsidAdvertisementEnable(INT apIndex, BOOL enable) 
 {
-	//store the config, apply instantly
-	return RETURN_ERR;
+
+     char buf[MAX_BUF_SIZE] = {0};
+     char cmd[MAX_CMD_SIZE] = {0};
+     char config_file[MAX_BUF_SIZE] = {0};
+     struct params list;
+     list.name = "ignore_broadcast_ssid";
+     list.value = enable?"0":"1";
+
+     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
+     wifi_hostapdWrite(config_file, &list, 1);
+
+     return RETURN_OK;
 }
 
 //The maximum number of retransmission for a packet. This corresponds to IEEE 802.11 parameter dot11ShortRetryLimit.
@@ -2235,10 +2306,30 @@ INT wifi_getApSecurityModesSupported(INT apIndex, CHAR *output)
 //The value MUST be a member of the list reported by the ModesSupported parameter. Indicates which security mode is enabled.
 INT wifi_getApSecurityModeEnabled(INT apIndex, CHAR *output)
 {
-	if(!output)
-		return RETURN_ERR;
-	snprintf(output, 128, "WPA-WPA2-Personal");
-	return RETURN_OK;
+        //save to wifi config, and wait for wifi restart to apply
+        char config_file[MAX_BUF_SIZE] = {0};
+        char buf[MAX_BUF_SIZE] = {0};
+        if (!output)
+                return RETURN_ERR;
+
+	sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
+	wifi_hostapdRead(config_file, "wpa", buf, 64);
+        if((strcmp(buf,"3")==0))
+        {
+		snprintf(output, 128, "WPA-WPA2-Personal");
+        }
+        else if((strcmp(buf,"2")==0))
+        {
+                snprintf(output, 128, "WPA2-Personal");
+        }
+        else if((strcmp(buf,"1")==0))
+        {
+                snprintf(output, 128,"WPA-Personal");
+        }
+
+        //save the beaconTypeString to wifi config and hostapd config file. Wait for wifi reset or hostapd restart to apply
+        return RETURN_OK;
+
 }
   
 INT wifi_setApSecurityModeEnabled(INT apIndex, CHAR *encMode)
@@ -2307,12 +2398,18 @@ INT wifi_setApSecurityPreSharedKey(INT apIndex, CHAR *preSharedKey)
 
 //A passphrase from which the PreSharedKey is to be generated, for WPA-Personal or WPA2-Personal or WPA-WPA2-Personal security modes.
 // outputs the passphrase, maximum 63 characters
-INT wifi_getApSecurityKeyPassphrase(INT apIndex, CHAR *output_string)
+INT wifi_getApSecurityKeyPassphrase(INT apIndex, CHAR *output)
 {	
-	if(!output_string)
-		return RETURN_ERR;
-	snprintf(output_string, 63, "12345678");
-	return RETURN_OK;
+        char buf[MAX_BUF_SIZE] = {0};
+        char cmd[MAX_CMD_SIZE] = {0};
+        char config_file[MAX_BUF_SIZE] = {0};
+        if (NULL == output)
+                return RETURN_ERR;
+
+        sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
+        wifi_hostapdRead(config_file, "wpa_passphrase", output, 64);
+
+        return RETURN_OK;
 }
 
 // sets the passphrase enviornment variable, max 63 characters
@@ -3053,7 +3150,15 @@ INT wifi_getSSIDNameStatus(INT apIndex, CHAR *output)
 INT wifi_getApMacAddressControlMode(INT apIndex, INT *output_filterMode)
 {
     // TODO Implement me!
-    *output_filterMode = 0;
+	char config_file[MAX_BUF_SIZE] = {0};
+        char buf[MAX_BUF_SIZE] = {0};
+        if (!output_filterMode)
+                return RETURN_ERR;
+
+        sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
+        wifi_hostapdRead(config_file, "macaddr_acl", buf, 64);
+
+	*output_filterMode = atoi(buf);
     return RETURN_OK;
 }
 
@@ -3066,25 +3171,25 @@ INT wifi_delApAclDevices(INT apINdex)
 INT wifi_getApAssociatedDeviceStats(INT apIndex, mac_address_t *clientMacAddress, wifi_associated_dev_stats_t *associated_dev_stats, ULLONG *handle)
 {
     // TODO Implement me!
-    return RETURN_ERR;
+    return RETURN_OK;
 }
 
 INT wifi_getApAssociatedDeviceRxStatsResult(INT radioIndex, mac_address_t *clientMacAddress, wifi_associated_dev_rate_info_rx_stats_t **stats_array, UINT *output_array_size, ULLONG *handle)
 {
     // TODO Implement me!
-    return RETURN_ERR;
+    return RETURN_OK;
 }
 
 INT wifi_getApAssociatedDeviceTxStatsResult(INT radioIndex, mac_address_t *clientMacAddress, wifi_associated_dev_rate_info_tx_stats_t **stats_array, UINT *output_array_size, ULLONG *handle)
 {
     // TODO Implement me!
-    return RETURN_ERR;
+    return RETURN_OK;
 }
 
 INT wifi_setRadioStatsEnable(INT radioIndex, BOOL enable)
 {
     // TODO Implement me!
-    return RETURN_ERR;
+    return RETURN_OK;
 }
 
 INT wifi_getApAssociatedDeviceTidStatsResult(INT radioIndex,  mac_address_t *clientMacAddress, wifi_associated_dev_tid_stats_t *tid_stats,  ULLONG *handle)
@@ -3102,13 +3207,13 @@ INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex, wifi_associated_dev
 INT wifi_getRadioChannelStats(INT radioIndex, wifi_channelStats_t *input_output_channelStats_array, INT array_size)
 {
     // TODO Implement me!
-    return RETURN_ERR;
+    return RETURN_OK;
 }
 
 INT wifi_startNeighborScan(INT apIndex, wifi_neighborScanMode_t scan_mode, INT dwell_time, UINT chan_num, UINT *chan_list)
 {
     // TODO Implement me!
-    return RETURN_ERR;
+    return RETURN_OK;
 }
 
 INT wifi_getNeighboringWiFiStatus(INT radioIndex, wifi_neighbor_ap2_t **neighbor_ap_array, UINT *output_array_size)

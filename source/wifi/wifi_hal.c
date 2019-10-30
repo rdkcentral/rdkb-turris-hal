@@ -24,6 +24,16 @@
 #include "wifi_hal.h"
 #include "wifi_hal_turris.h"
 
+#include <errno.h>
+#include <netlink/attr.h>
+#include <netlink/netlink.h>
+#include <netlink/genl/genl.h>
+#include <netlink/genl/family.h>
+#include <netlink/genl/ctrl.h>
+#include <linux/nl80211.h>
+
+#define MAC_ALEN 6
+
 #ifndef AP_PREFIX
 #define AP_PREFIX	"wlan"
 #endif
@@ -55,6 +65,24 @@
 #define DEF_HOSTAPD_CONF_5 "/usr/ccsp/wifi/hostapd5.conf"
 #define DEF_RADIO_PARAM_CONF "/usr/ccsp/wifi/radio_param_def.cfg"
 #define LM_DHCP_CLIENT_FORMAT   "%63d %17s %63s %63s"
+
+typedef struct {
+    int id;
+    struct nl_sock* socket;
+    struct nl_cb* cb;
+} Netlink;
+
+static struct nla_policy stats_policy[NL80211_STA_INFO_MAX + 1] = {
+    [NL80211_STA_INFO_TX_BITRATE] = { .type = NLA_NESTED },
+    [NL80211_STA_INFO_RX_BITRATE] = { .type = NLA_NESTED },
+    [NL80211_STA_INFO_TID_STATS] = { .type = NLA_NESTED }
+};
+
+static struct nla_policy rate_policy[NL80211_RATE_INFO_MAX + 1] = {
+};
+
+static struct nla_policy tid_policy[NL80211_TID_STATS_MAX + 1] = {
+};
 
 //For 5g Alias Interfaces
 static BOOL priv_flag = TRUE;
@@ -6925,17 +6953,7 @@ INT wifi_pushRadioChannel(INT radioIndex, UINT channel)
     return RETURN_ERR;
 }
 
-INT wifi_getApAssociatedDeviceRxStatsResult(INT radioIndex, mac_address_t *clientMacAddress, wifi_associated_dev_rate_info_rx_stats_t **stats_array, UINT *output_array_size, ULLONG *handle)
-{
-    // TODO Implement me!
-    return RETURN_ERR;
-}
 
-INT wifi_getApAssociatedDeviceTxStatsResult(INT radioIndex, mac_address_t *clientMacAddress, wifi_associated_dev_rate_info_tx_stats_t **stats_array, UINT *output_array_size, ULLONG *handle)
-{
-    // TODO Implement me!
-    return RETURN_ERR;
-}
 
 INT wifi_setRadioStatsEnable(INT radioIndex, BOOL enable)
 {
@@ -7003,6 +7021,342 @@ INT wifi_delApAclDevices(INT apINdex)
 {
     // TODO Implement me!
     return RETURN_ERR;
+}
+static int mac_addr_aton(unsigned char *mac_addr, char *arg)
+{
+    unsigned int mac_addr_int[6]={};
+    sscanf(arg, "%x:%x:%x:%x:%x:%x", mac_addr_int+0, mac_addr_int+1, mac_addr_int+2, mac_addr_int+3, mac_addr_int+4, mac_addr_int+5);
+    mac_addr[0] = mac_addr_int[0];
+    mac_addr[1] = mac_addr_int[1];
+    mac_addr[2] = mac_addr_int[2];
+    mac_addr[3] = mac_addr_int[3];
+    mac_addr[4] = mac_addr_int[4];
+    mac_addr[5] = mac_addr_int[5];
+    return 0;
+}
+
+static void mac_addr_ntoa(char *mac_addr, unsigned char *arg)
+{
+    unsigned int mac_addr_int[6]={};
+    mac_addr_int[0] = arg[0];
+    mac_addr_int[1] = arg[1];
+    mac_addr_int[2] = arg[2];
+    mac_addr_int[3] = arg[3];
+    mac_addr_int[4] = arg[4];
+    mac_addr_int[5] = arg[5];
+    snprintf(mac_addr, 20, "%02x:%02x:%02x:%02x:%02x:%02x", mac_addr_int[0], mac_addr_int[1],mac_addr_int[2],mac_addr_int[3],mac_addr_int[4],mac_addr_int[5]);
+    return;
+}
+
+static int initSock80211(Netlink* nl) {
+    nl->socket = nl_socket_alloc();
+    if (!nl->socket) {
+    fprintf(stderr, "Failing to allocate the  sock\n");
+    return -ENOMEM;
+    }
+
+    nl_socket_set_buffer_size(nl->socket, 8192, 8192);
+
+    if (genl_connect(nl->socket)) {
+        fprintf(stderr, "Failed to connect\n");
+        nl_close(nl->socket);
+        nl_socket_free(nl->socket);
+        return -ENOLINK;
+    }
+
+    nl->id = genl_ctrl_resolve(nl->socket, "nl80211");
+    if (nl->id< 0) {
+        fprintf(stderr, "interface not found.\n");
+        nl_close(nl->socket);
+        nl_socket_free(nl->socket);
+        return -ENOENT;
+    }
+
+    nl->cb = nl_cb_alloc(NL_CB_DEFAULT);
+    if ((!nl->cb)) {
+    fprintf(stderr, "Failed to allocate netlink callback.\n");
+    nl_close(nl->socket);
+    nl_socket_free(nl->socket);
+    return ENOMEM;
+    }
+
+    return nl->id;
+}
+
+static int nlfree(Netlink *nl)
+{
+    nl_cb_put(nl->cb);
+    nl_close(nl->socket);
+    nl_socket_free(nl->socket);
+    return 0;
+}
+
+static int rxStatsInfo_callback(struct nl_msg *msg, void *arg) {
+    struct nlattr *tb[NL80211_ATTR_MAX + 1];
+    struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+    struct nlattr *sinfo[NL80211_STA_INFO_MAX + 1];
+    struct nlattr *rinfo[NL80211_RATE_INFO_MAX + 1];
+    struct nlattr *stats_info[NL80211_TID_STATS_MAX + 1];
+    char mac_addr[20],dev[20];
+
+    nla_parse(tb,
+        NL80211_ATTR_MAX,
+        genlmsg_attrdata(gnlh, 0),
+        genlmsg_attrlen(gnlh, 0),
+        NULL);
+
+    if(!tb[NL80211_ATTR_STA_INFO]) {
+        fprintf(stderr, "sta stats missing!\n");
+        return NL_SKIP;
+    }
+
+    if(nla_parse_nested(sinfo, NL80211_STA_INFO_MAX,tb[NL80211_ATTR_STA_INFO], stats_policy)) {
+        fprintf(stderr, "failed to parse nested attributes!\n");
+        return NL_SKIP;
+    }
+    mac_addr_ntoa(mac_addr, nla_data(tb[NL80211_ATTR_MAC]));
+
+    if_indextoname(nla_get_u32(tb[NL80211_ATTR_IFINDEX]), dev);
+
+    if(nla_parse_nested(rinfo, NL80211_RATE_INFO_MAX, sinfo[NL80211_STA_INFO_RX_BITRATE], rate_policy )) {
+        fprintf(stderr, "failed to parse nested rate attributes!");
+        return;
+    }
+
+   if(sinfo[NL80211_STA_INFO_TID_STATS])
+   {
+       if(nla_parse_nested(stats_info, NL80211_TID_STATS_MAX,sinfo[NL80211_STA_INFO_TID_STATS], tid_policy)) {
+           printf("failed to parse nested stats attributes!");
+           return;
+       }
+   }
+
+   if( nla_data(tb[NL80211_ATTR_VHT_CAPABILITY]) )
+   {
+       printf("Type is VHT\n");
+       if(rinfo[NL80211_RATE_INFO_VHT_NSS])
+           ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->nss = (char*)(nla_get_u8(rinfo[NL80211_RATE_INFO_VHT_NSS]));
+
+       if(rinfo[NL80211_RATE_INFO_40_MHZ_WIDTH])
+            ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->bw = 1;
+       if(rinfo[NL80211_RATE_INFO_80_MHZ_WIDTH])
+            ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->bw = 2;
+       if(rinfo[NL80211_RATE_INFO_80P80_MHZ_WIDTH])
+             ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->bw = 2;
+       if(rinfo[NL80211_RATE_INFO_160_MHZ_WIDTH])
+             ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->bw = 2;
+       if((rinfo[NL80211_RATE_INFO_10_MHZ_WIDTH]) || (rinfo[NL80211_RATE_INFO_5_MHZ_WIDTH]) )
+                         ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->bw = 0;
+  }
+  else
+  {
+      printf(" OFDM or CCK \n");
+      ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->bw = 0;
+      ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->nss = 0;
+  }
+
+  if(sinfo[NL80211_STA_INFO_RX_BITRATE]) {
+      if(rinfo[NL80211_RATE_INFO_MCS])
+          ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->mcs = (char*)(nla_get_u8(rinfo[NL80211_RATE_INFO_MCS]));
+      }
+      if(sinfo[NL80211_STA_INFO_RX_BYTES64])
+          ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->bytes = nla_get_u64(sinfo[NL80211_STA_INFO_RX_BYTES64]);
+      else if (sinfo[NL80211_STA_INFO_RX_BYTES])
+          ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->bytes = nla_get_u32(sinfo[NL80211_STA_INFO_RX_BYTES]);
+
+      if(stats_info[NL80211_TID_STATS_RX_MSDU])
+          ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->msdus = nla_get_u64(stats_info[NL80211_TID_STATS_RX_MSDU]);
+
+      if (sinfo[NL80211_STA_INFO_SIGNAL])
+           ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->rssi_combined = (char*)(nla_get_u8(sinfo[NL80211_STA_INFO_SIGNAL]));
+      //Assigning 0 for RETRIES ,PPDUS and MPDUS as we dont have rx retries attribute in libnl_3.3.0
+           ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->retries = 0;
+           ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->ppdus = 0;
+           ((wifi_associated_dev_rate_info_rx_stats_t*)arg)->msdus = 0;
+      //rssi_array need to be filled
+      return NL_SKIP;
+}
+
+INT wifi_getApAssociatedDeviceRxStatsResult(INT radioIndex, mac_address_t *clientMacAddress, wifi_associated_dev_rate_info_rx_stats_t **stats_array, UINT *output_array_size, ULLONG *handle)
+{
+    Netlink nl;
+    char phy_addr[MAC_ALEN];
+    char if_name[10];
+
+    snprintf(if_name,sizeof(if_name),"wlan%d",radioIndex);
+    nl.id = initSock80211(&nl);
+
+    if (nl.id < 0) {
+    fprintf(stderr, "Error initializing netlink \n");
+    return 0;
+    }
+
+    struct nl_msg* msg = nlmsg_alloc();
+
+    if (!msg) {
+        fprintf(stderr, "Failed to allocate netlink message.\n");
+        nlfree(&nl);
+        return 0;
+    }
+
+    genlmsg_put(msg,
+        NL_AUTO_PORT,
+        NL_AUTO_SEQ,
+        nl.id,
+        0,
+        0,
+        NL80211_CMD_GET_STATION,
+        0);
+
+    if (mac_addr_aton(phy_addr, clientMacAddress)) {
+        printf("invalid mac address\n");
+        return 0;
+    }
+
+    nla_put(msg, NL80211_ATTR_MAC, MAC_ALEN, phy_addr);
+    nla_put_u32(msg, NL80211_ATTR_IFINDEX, if_nametoindex(if_name));
+    nl_cb_set(nl.cb, NL_CB_VALID , NL_CB_CUSTOM, rxStatsInfo_callback, stats_array);
+    nl_send_auto(nl.socket, msg);
+    nl_recvmsgs(nl.socket, nl.cb);
+    nlmsg_free(msg);
+    nlfree(&nl);
+    return RETURN_OK;
+}
+
+static int txStatsInfo_callback(struct nl_msg *msg, void *arg) {
+    struct nlattr *tb[NL80211_ATTR_MAX + 1];
+    struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+    struct nlattr *sinfo[NL80211_STA_INFO_MAX + 1];
+    struct nlattr *rinfo[NL80211_RATE_INFO_MAX + 1];
+    struct nlattr *stats_info[NL80211_TID_STATS_MAX + 1];
+    char mac_addr[20],dev[20];
+
+    nla_parse(tb,
+              NL80211_ATTR_MAX,
+              genlmsg_attrdata(gnlh, 0),
+              genlmsg_attrlen(gnlh, 0),
+              NULL);
+
+    if(!tb[NL80211_ATTR_STA_INFO]) {
+        fprintf(stderr, "sta stats missing!\n");
+        return NL_SKIP;
+    }
+
+    if(nla_parse_nested(sinfo, NL80211_STA_INFO_MAX,tb[NL80211_ATTR_STA_INFO], stats_policy)) {
+        fprintf(stderr, "failed to parse nested attributes!\n");
+        return NL_SKIP;
+    }
+
+    mac_addr_ntoa(mac_addr, nla_data(tb[NL80211_ATTR_MAC]));
+
+    if_indextoname(nla_get_u32(tb[NL80211_ATTR_IFINDEX]), dev);
+
+    if(nla_parse_nested(rinfo, NL80211_RATE_INFO_MAX, sinfo[NL80211_STA_INFO_TX_BITRATE], rate_policy)) {
+        fprintf(stderr, "failed to parse nested rate attributes!");
+        return;
+    }
+
+    if(sinfo[NL80211_STA_INFO_TID_STATS])
+    {
+        if(nla_parse_nested(stats_info, NL80211_TID_STATS_MAX,sinfo[NL80211_STA_INFO_TID_STATS], tid_policy)) {
+            printf("failed to parse nested stats attributes!");
+            return;
+        }
+    }
+    if(nla_data(tb[NL80211_ATTR_VHT_CAPABILITY]))
+    {
+        printf("Type is VHT\n");
+        if(rinfo[NL80211_RATE_INFO_VHT_NSS])
+            ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->nss = (char*)(nla_get_u8(rinfo[NL80211_RATE_INFO_VHT_NSS]));
+
+        if(rinfo[NL80211_RATE_INFO_40_MHZ_WIDTH])
+            ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->bw = 1;
+        if(rinfo[NL80211_RATE_INFO_80_MHZ_WIDTH])
+            ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->bw = 2;
+        if(rinfo[NL80211_RATE_INFO_80P80_MHZ_WIDTH])
+            ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->bw = 2;
+        if(rinfo[NL80211_RATE_INFO_160_MHZ_WIDTH])
+            ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->bw = 2;
+        if((rinfo[NL80211_RATE_INFO_10_MHZ_WIDTH]) || (rinfo[NL80211_RATE_INFO_5_MHZ_WIDTH]))
+            ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->bw = 0;
+    }
+    else
+    {
+        printf(" OFDM or CCK \n");
+        ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->bw = 0;
+        ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->nss = 0;
+    }
+
+    if(sinfo[NL80211_STA_INFO_TX_BITRATE]) {
+       if(rinfo[NL80211_RATE_INFO_MCS])
+           ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->mcs = (char*)(nla_get_u8(rinfo[NL80211_RATE_INFO_MCS]));
+    }
+
+    if(sinfo[NL80211_STA_INFO_TX_BYTES64])
+        ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->bytes = nla_get_u64(sinfo[NL80211_STA_INFO_TX_BYTES64]);
+    else if (sinfo[NL80211_STA_INFO_TX_BYTES])
+        ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->bytes = nla_get_u32(sinfo[NL80211_STA_INFO_TX_BYTES]);
+
+    //Assigning  0 for mpdus and ppdus , as we do not have attributes in netlink
+        ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->mpdus = 0;
+        ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->mpdus = 0;
+
+    if(stats_info[NL80211_TID_STATS_TX_MSDU])
+        ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->msdus = nla_get_u64(stats_info[NL80211_TID_STATS_TX_MSDU]);
+
+    if(sinfo[NL80211_STA_INFO_TX_RETRIES])
+        ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->retries = nla_get_u32(sinfo[NL80211_STA_INFO_TX_RETRIES]);
+
+    if(sinfo[NL80211_STA_INFO_TX_FAILED])
+                 ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->attempts = nla_get_u32(sinfo[NL80211_STA_INFO_TX_PACKETS]) + nla_get_u32(sinfo[NL80211_STA_INFO_TX_FAILED]);
+
+    return NL_SKIP;
+}
+
+INT wifi_getApAssociatedDeviceTxStatsResult(INT radioIndex, mac_address_t *clientMacAddress, wifi_associated_dev_rate_info_tx_stats_t **stats_array, UINT *output_array_size, ULLONG *handle)
+{
+    Netlink nl;
+    char mac_addr[MAC_ALEN];
+    char if_name[10];
+
+    snprintf(if_name,sizeof(if_name),"wlan%d",radioIndex);
+
+    nl.id = initSock80211(&nl);
+
+    if(nl.id < 0) {
+        fprintf(stderr, "Error initializing netlink \n");
+        return 0;
+    }
+
+    struct nl_msg* msg = nlmsg_alloc();
+
+    if(!msg) {
+        fprintf(stderr, "Failed to allocate netlink message.\n");
+        nlfree(&nl);
+        return 0;
+    }
+
+    genlmsg_put(msg,
+                NL_AUTO_PORT,
+                NL_AUTO_SEQ,
+                nl.id,
+                0,
+                0,
+                NL80211_CMD_GET_STATION,
+                0);
+
+    if(mac_addr_aton(mac_addr, clientMacAddress)) {
+        printf("invalid mac address\n");
+        return 0;
+    }
+    nla_put(msg, NL80211_ATTR_MAC, MAC_ALEN, mac_addr);
+    nla_put_u32(msg, NL80211_ATTR_IFINDEX, if_nametoindex(if_name));
+    nl_cb_set(nl.cb, NL_CB_VALID , NL_CB_CUSTOM, txStatsInfo_callback, stats_array);
+    nl_send_auto(nl.socket, msg);
+    nl_recvmsgs(nl.socket, nl.cb);
+    nlmsg_free(msg);
+    nlfree(&nl);
+    return RETURN_OK;
 }
 
 #ifdef _WIFI_HAL_TEST_

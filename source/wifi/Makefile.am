@@ -26,5 +26,5 @@ hardware_platform = armv7ahf-neon-rdk-linux-musleabi
 
 lib_LTLIBRARIES = libhal_wifi.la
 libhal_wifi_la_CPPFLAGS = -I$(top_srcdir)/./include $(CPPFLAGS)
-libhal_wifi_la_SOURCES = wifi_hal.c wifi_hostapd_interface.c
+libhal_wifi_la_SOURCES = wifi_hal.c
 libhal_wifi_la_LDFLAGS =

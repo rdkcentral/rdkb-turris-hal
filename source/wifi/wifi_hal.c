@@ -62,6 +62,10 @@
 #define RADIO_PREFIX	"wlan"
 #endif
 
+#include <ev.h>
+#include <wpa_ctrl.h>
+#include <errno.h>
+#define MAX_SUPPORTED_IFACES 6 // 2 x home 2 x backhaul 2x secure onboard
 
 /*****************************************************************
 * EXTERNAL HELPERS
@@ -78,6 +82,7 @@
 #endif
 #define CONFIG_PREFIX "/nvram/hostapd"
 #define ACL_PREFIX "/tmp/hostapd-acl"
+#define SOCK_PREFIX "/var/run/hostapd/wifi"
 
 static int _syscmd(char *cmd, char *retBuf, int retBufSize)
 {
@@ -429,7 +434,7 @@ INT wifi_getSSIDNumberOfEntries(ULONG *output) //Tr181
 	if (NULL == output)
         	return RETURN_ERR;
 
-	*output=16;
+	*output=6;
 	return RETURN_OK;
 }
 
@@ -1834,11 +1839,10 @@ INT wifi_setApRadioIndex(INT apIndex, INT radioIndex)
 // Get the ACL MAC list per AP
 INT wifi_getApAclDevices(INT apIndex, CHAR *macArray, UINT buf_size) 
 {		
-	char acl_file[MAX_BUF_SIZE] = {0};
         char cmd[MAX_CMD_SIZE]={'\0'};
         int ret = 0;
-        sprintf(acl_file,"%s%d",ACL_PREFIX,apIndex);
-	sprintf(cmd, "cat %s", acl_file);
+	//sprintf(cmd, "cat %s%d",ACL_PREFIX,apIndex);
+	sprintf(cmd, "hostapd_cli -i %s%d accept_acl SHOW | awk '{print $1}'", AP_PREFIX,apIndex);
 	ret = _syscmd(cmd,macArray,buf_size);
         if (ret != 0)
                 return RETURN_ERR;
@@ -1862,10 +1866,10 @@ INT wifi_addApAclDevice(INT apIndex, CHAR *DeviceMacAddress)
 {
     char cmd[MAX_CMD_SIZE]={'\0'};
     char buf[MAX_BUF_SIZE]={'\0'};
-    char acl_file[MAX_BUF_SIZE] = {0};
+//    char acl_file[MAX_BUF_SIZE] = {0};
     int ret = 0;
 
-    sprintf(acl_file,"%s%d",ACL_PREFIX,apIndex);    
+/*    sprintf(acl_file,"%s%d",ACL_PREFIX,apIndex);    
 
     sprintf(cmd, "cat %s | grep \"%s\"", acl_file, DeviceMacAddress);
     ret = _syscmd(cmd,buf,sizeof(buf));
@@ -1877,7 +1881,12 @@ INT wifi_addApAclDevice(INT apIndex, CHAR *DeviceMacAddress)
         ret = _syscmd(cmd,buf,sizeof(buf));
         if (ret != 0)
                 return RETURN_ERR;
-         }
+         } */
+    sprintf(cmd, "hostapd_cli -i %s%d accept_acl ADD_MAC %s", AP_PREFIX,apIndex,DeviceMacAddress);
+    ret = _syscmd(cmd,buf,sizeof(buf));
+    if (ret != 0)
+           return RETURN_ERR;
+
     return RETURN_OK;
 
 }
@@ -1891,11 +1900,16 @@ INT wifi_delApAclDevice(INT apIndex, CHAR *DeviceMacAddress)
     char acl_file[MAX_BUF_SIZE] = {0};
     int ret = 0;
 
-    sprintf(acl_file,"%s%d",ACL_PREFIX,apIndex);
+/*    sprintf(acl_file,"%s%d",ACL_PREFIX,apIndex);
     sprintf(cmd, "sed -i '/%s/d' %s",DeviceMacAddress, acl_file);
     ret = _syscmd(cmd,buf,sizeof(buf));
     if (ret != 0)
-                return RETURN_ERR;
+                return RETURN_ERR;*/
+    sprintf(cmd, "hostapd_cli -i %s%d accept_acl DEL_MAC %s", AP_PREFIX,apIndex,DeviceMacAddress);
+    ret = _syscmd(cmd,buf,sizeof(buf));
+    if (ret != 0)
+           return RETURN_ERR;
+
 
 
 	return RETURN_OK;
@@ -3103,10 +3117,38 @@ INT wifi_pushRadioChannel(INT radioIndex, UINT channel)
     return RETURN_ERR;
 }
 
+static INT chan_to_freq(int radioIndex, UINT channel, int *freq)
+{
+	char cmd[MAX_CMD_SIZE] = {0};
+	char buf[MAX_BUF_SIZE] = {0};
+	int ret = 0;
+
+	sprintf(cmd, "iwlist %s%d channel |grep %02d |awk '{print $4}'  | tr -d '.'", RADIO_PREFIX, radioIndex, channel);
+	ret = _syscmd(cmd,buf,sizeof(buf));
+	if ((ret != 0) && (strlen(buf) == 0))
+		return RETURN_ERR;
+	sscanf(buf,"%d", freq);
+	return RETURN_OK;
+
+}
+
 INT wifi_pushRadioChannel2(INT radioIndex, UINT channel, UINT channel_width_MHz, UINT csa_beacon_count)
 {
-    // TODO Implement me!
-    return RETURN_ERR;
+	// hostapd_cli  -i wifi0 chan_switch 30 (wzorek chan do freq) sec_channel_offset=1 center_freq1=(freq+polowa bandwith zalezne od rozmiaru) bandwidth=40 (2.4 ht 5g vht)
+        char cmd[MAX_CMD_SIZE] = {0};
+        char buf[MAX_BUF_SIZE] = {0};
+	int freq =0;
+	int ret = 0;
+//	char vht[4] = (radioIndex == 0)? "vt":"vht";
+	
+	if(chan_to_freq(radioIndex,channel,&freq) == RETURN_ERR)
+		return RETURN_ERR;
+	//sprintf(cmd, "hostapd_cli  -i %s%d chan_switch %d %d sec_channel_offset=1 center_freq1=(freq+polowa bandwith zalezne od rozmiaru) bandwidth=%d %s", RADIO_PREFIX, radioIndex, csa_beacon_count, freq,channel_width_MHz, vht);
+	sprintf(cmd, "hostapd_cli  -i %s%d chan_switch %d %d ", RADIO_PREFIX, radioIndex, csa_beacon_count, freq);
+	ret = _syscmd(cmd,buf,sizeof(buf));
+	if ((ret != 0) && (strlen(buf) == 0))
+		return RETURN_ERR;	
+	return RETURN_OK;
 }
 
 INT wifi_getRadioAutoChannelEnable(INT radioIndex, BOOL *output_bool)
@@ -3162,10 +3204,18 @@ INT wifi_getApMacAddressControlMode(INT apIndex, INT *output_filterMode)
     return RETURN_OK;
 }
 
-INT wifi_delApAclDevices(INT apINdex)
+INT wifi_delApAclDevices(INT apIndex)
 {
-    // TODO Implement me!
-    return RETURN_ERR;
+    char cmd[MAX_BUF_SIZE] = {0};
+    char buf[MAX_BUF_SIZE] = {0};
+    int ret = 0;
+    sprintf(cmd, "hostapd_cli -i %s%d accept_acl CLEAR", AP_PREFIX,apIndex);
+    ret = _syscmd(cmd,buf,sizeof(buf));
+    if (ret != 0)
+           return RETURN_ERR;
+
+        return RETURN_OK;
+
 }
 
 INT wifi_getApAssociatedDeviceStats(INT apIndex, mac_address_t *clientMacAddress, wifi_associated_dev_stats_t *associated_dev_stats, ULLONG *handle)
@@ -3222,12 +3272,6 @@ INT wifi_getNeighboringWiFiStatus(INT radioIndex, wifi_neighbor_ap2_t **neighbor
     return RETURN_ERR;
 }
 
-void wifi_newApAssociatedDevice_callback_register(wifi_newApAssociatedDevice_callback callback_proc)
-{
-    // TODO Implement me!
-    return;
-}
-
 INT wifi_steering_setGroup(UINT steeringgroupIndex, wifi_steering_apConfig_t *cfg_2, wifi_steering_apConfig_t *cfg_5)
 {
     // TODO Implement me!
@@ -3263,6 +3307,178 @@ INT wifi_steering_eventRegister(wifi_steering_eventCB_t event_cb)
     // TODO Implement me!
     return RETURN_ERR;
 }
+#define HOSTAPD_STA_PARAM_ENTRIES 29
+/*struct hostapd_sta_param {
+	char key[50];
+	char value[100];
+}
+
+static char * hostapd_st_get_param(struct hostapd_sta_param * params, char *key){
+
+	int i = 0;
+	
+	while(i<HOSTAPD_STA_PARAM_ENTRIES) {
+	if (strncmp(params[i].key,key,50) == 0){
+		return &params[i].value;
+	}
+	i++;
+	}
+	return NULL;
+
+} */
+INT wifi_getApAssociatedDeviceDiagnosticResult3(INT apIndex, wifi_associated_dev3_t **associated_dev_array, UINT *output_array_size)
+{
+//	 return wifi_getApAssociatedDeviceDiagnosticResult2(apIndex, (wifi_associated_dev2_t **)associated_dev_array, output_array_size);
+	char cmd[256];    
+	char buf[2048];
+	wifi_associated_dev_t *dev=NULL;
+	unsigned int assoc_cnt = 0;
+	char *pos;
+	FILE *f;
+	char *mac=NULL;
+	char *aid =NULL;
+	char *chan = NULL;
+	char *txrate = NULL;
+	char *rxrate = NULL;
+	char *rssi = NULL;
+//    	struct hostapd_sta_param sta_parameters[29];
+//	char *key, *value;
+    *output_array_size = 0;
+    *associated_dev_array = NULL;
+   
+    if (apIndex < 0) {
+        return RETURN_ERR;
+    }
+
+    wifi_getApNumDevicesAssociated(apIndex, output_array_size);
+
+
+/*        sprintf(cmd, "hostapd_cli -i %s%d list_sta | wc -l", AP_PREFIX, apIndex);
+        _syscmd(cmd, buf, sizeof(buf));
+        sscanf(buf,"%d", output_array_size);
+	printf("FOUND2 %d\n", *output_array_size); */
+    
+/*    sprintf(cmd,  "wlanconfig %s%d list sta  2>/dev/null | grep -v HTCAP >/tmp/ap_%d_cli.txt; cat /tmp/ap_%d_cli.txt | wc -l" , AP_PREFIX, apIndex, apIndex, apIndex);
+    _syscmd(cmd,buf,sizeof(buf));
+
+    *output_array_size = atoi(buf);*/
+
+    if (*output_array_size <= 0) 
+		return RETURN_OK;
+	
+	dev=(wifi_associated_dev3_t *) calloc (*output_array_size, sizeof(wifi_associated_dev3_t));
+	*associated_dev_array = dev;      
+
+
+/*
+      DRAFT
+    sprintf(cmd, "hostapd_cli -i %s%d all_sta",AP_PREFIX, apIndex);
+    if ((f = popen(cmd, "r")) == NULL) {
+        printf("%s: popen %s error\n",__func__, cmd);
+        return -1;
+    }
+ Sample output
+ac:ab:93:Xc:19:7d
+flags=[AUTH][ASSOC][AUTHORIZED][WMM][HT]
+aid=1
+capability=0x1011
+listen_interval=10
+supported_rates=8c 12 98 24 b0 48 60 6c
+timeout_next=NULLFUNC POLL
+dot11RSNAStatsSTAAddress=ac:ab:93:Xc:19:7d
+dot11RSNAStatsVersion=1
+dot11RSNAStatsSelectedPairwiseCipher=00-0f-ac-4
+dot11RSNAStatsTKIPLocalMICFailures=0
+dot11RSNAStatsTKIPRemoteMICFailures=0
+wpa=2
+AKMSuiteSelector=00-0f-ac-2
+hostapdWPAPTKState=11
+hostapdWPAPTKGroupState=0
+rx_packets=282
+tx_packets=104
+rx_bytes=31330
+tx_bytes=27879
+inactive_msec=4390
+signal=-65
+rx_rate_info=60
+tx_rate_info=60
+ht_mcs_bitmask=ffff0000000000000000
+connected_time=19
+supp_op_classes=73707374757c7d7e7f808182767778797a7b515354
+min_txpower=10
+max_txpower=18
+ht_caps_info=0x006f
+ext_capab=0000080000000040
+
+*/
+       sprintf(cmd, "hostapd_cli -i %s%d list_sta",AP_PREFIX, apIndex);
+    if ((f = popen(cmd, "r")) == NULL) {
+        printf("%s: popen %s error\n",__func__, cmd);
+        return -1;
+    }
+ 
+    for(int i=0; i<*output_array_size;i++) {
+	
+		fscanf(f, "%x:%x:%x:%x:%x:%x",
+			   (unsigned int *)&dev[assoc_cnt].cli_MACAddress[0], 
+			   (unsigned int *)&dev[assoc_cnt].cli_MACAddress[1], 
+			   (unsigned int *)&dev[assoc_cnt].cli_MACAddress[2], 
+			   (unsigned int *)&dev[assoc_cnt].cli_MACAddress[3], 
+			   (unsigned int *)&dev[assoc_cnt].cli_MACAddress[4], 
+			   (unsigned int *)&dev[assoc_cnt].cli_MACAddress[5] );
+
+/*		//fill all sta parameters from sta
+		int k = 0;
+		while(k < HOSTAPD_STA_PARAM_ENTRIES) {
+			fgets(buf, 2048, f);
+			key = strtok(line, "    \n");
+			strncpy(sta_parameters[k].key,key,50);
+			value = = strtok(NULL, "   \n");
+			strncpy(sta_parameters[k].value,value,100);
+			k++;
+		}
+			
+//		char *aid = hostapd_sta_get_param(sta_parameters,"aid");
+//		char *chan = hostapd_sta_get_param(sta_parameters,"aid");
+//		char *txrate = hostapd_sta_get_param(sta_parameters,"tx_rate_info");
+//		char *rxrate = hostapd_sta_get_param(sta_parameters,"rx_rate_info");
+//		char *rssi = hostapd_sta_get_param(sta_parameters,"signal");
+	
+		
+	
+		memset(dev[assoc_cnt].cli_IPAddress, 0, 64);
+		dev[assoc_cnt].cli_AuthenticationState = 1;
+
+	/*	dev[assoc_cnt].cli_AuthenticationState =  (rssi != NULL) ? atoi(rssi) - 100 : 0;
+		dev[assoc_cnt].cli_LastDataDownlinkRate =  (txrate != NULL) ? atoi(strtok(txrate,"M")) : 0; 
+		dev[assoc_cnt].cli_LastDataUplinkRate =  (rxrate != NULL) ? atoi(strtok(rxrate,"M")) : 0;
+		
+		//zqiu: TODO: fill up the following items
+		dev[assoc_cnt].cli_SignalStrength=-100;
+		dev[assoc_cnt].cli_Retransmissions=0;
+		dev[assoc_cnt].cli_Active=TRUE;
+		strncpy(dev[assoc_cnt].cli_OperatingStandard, "", 64);
+		strncpy(dev[assoc_cnt].cli_OperatingChannelBandwidth, "20MHz", 64);
+		dev[assoc_cnt].cli_SNR=20;
+		strncpy(dev[assoc_cnt].cli_InterferenceSources, "", 64);
+		dev[assoc_cnt].cli_DataFramesSentAck=0;
+		dev[assoc_cnt].cli_DataFramesSentNoAck=0;
+		dev[assoc_cnt].cli_BytesSent=0;
+		dev[assoc_cnt].cli_BytesReceived=0;
+		dev[assoc_cnt].cli_RSSI=30;
+	*/	
+        
+    }
+    pclose(f);
+
+	return RETURN_OK;
+
+
+
+
+}
+
+
 
 INT wifi_steering_eventUnregister(void)
 {
@@ -3280,26 +3496,6 @@ INT wifi_setRMBeaconRequest(UINT apIndex, CHAR *peer, wifi_BeaconRequest_t *in_r
     // TODO Implement me!
     return RETURN_ERR;
 }
-typedef enum {
-    WIFI_EVENT_CHANNELS_CHANGED,
-    WIFI_EVENT_DFS_RADAR_DETECTED
-} wifi_chan_eventType_t;
-
-typedef enum {
-   CHAN_STATE_AVAILABLE,
-   CHAN_STATE_DFS_NOP_FINISHED,
-   CHAN_STATE_DFS_NOP_START,
-   CHAN_STATE_DFS_CAC_START,
-   CHAN_STATE_DFS_CAC_COMPLETED
-} wifi_channelState_t;
-
-
-typedef struct _wifi_channelMap_t {
-   INT ch_number;
-   wifi_channelState_t ch_state;
-} wifi_channelMap_t;
-
-typedef void (*wifi_chan_eventCB_t)(UINT radioIndex, wifi_chan_eventType_t event, UCHAR channel);
 
 INT wifi_getRadioChannels(INT radioIndex, wifi_channelMap_t *outputMap, INT outputMapSize)
 {
@@ -3323,7 +3519,7 @@ INT wifi_setBSSTransitionActivation(UINT apIndex, BOOL activate)
 INT wifi_chan_eventRegister(wifi_chan_eventCB_t eventCb)
 {
     // TODO Implement me!
-    return RETURN_ERR;
+    return RETURN_OK;
 }
 INT wifi_getBSSTransitionActivation(UINT apIndex, BOOL *activate)
 {
@@ -3365,12 +3561,260 @@ INT wifi_getNeighborReportActivation(UINT apIndex, BOOL *activate)
     return RETURN_OK;
 
 }
-void wifi_apDisassociatedDevice_callback_register(wifi_apDisassociatedDevice_callback callback_proc)
+/***************************************************
+***** hostapd socket part **************************
+***************************************************/
+#ifndef container_of
+#define offsetof(st, m) ((size_t)&(((st *)0)->m))
+#define container_of(ptr, type, member) \
+                            ((type *)((char *)ptr - offsetof(type, member)))
+#endif /* container_of */
+
+struct ctrl {
+    char sockpath[128];
+    char sockdir[128];
+    char bss[IFNAMSIZ];
+    int ssid_index;
+    void (*cb)(struct ctrl *ctrl, int level, const char *buf, size_t len);
+    void (*overrun)(struct ctrl *ctrl);
+    struct wpa_ctrl *wpa;
+    unsigned int ovfl;
+    int initialized;
+    ev_timer retry;
+    ev_stat stat;
+    ev_io io;
+};
+static wifi_newApAssociatedDevice_callback clients_connect_cb;
+static wifi_apDisassociatedDevice_callback clients_disconnect_cb;
+static struct ctrl wpa_ctrl[MAX_SUPPORTED_IFACES];
+static int initialized = 0;
+/* static void
+ctrl_close(struct ctrl *ctrl)
 {
-    // TODO Implement me!
+    if (ctrl->io.cb)
+        ev_io_stop(EV_DEFAULT_ &ctrl->io);
+    if (ctrl->retry.cb)
+        ev_timer_stop(EV_DEFAULT_ &ctrl->retry);
+    if (!ctrl->wpa)
+        return;
+
+    wpa_ctrl_detach(ctrl->wpa);
+    wpa_ctrl_close(ctrl->wpa);
+    ctrl->wpa = NULL;
+    LOGI("%s: closed", ctrl->bss);
+
+    if (ctrl->closed)
+        ctrl->closed(ctrl);
+} */
+
+static unsigned int
+ctrl_get_drops(struct ctrl *ctrl)
+{
+    char cbuf[256] = {};
+    struct msghdr msg = { .msg_control = cbuf, .msg_controllen = sizeof(cbuf) };
+    struct cmsghdr *cmsg;
+    unsigned int ovfl = ctrl->ovfl;
+    unsigned int drop;
+
+    recvmsg(ctrl->io.fd, &msg, MSG_DONTWAIT);
+    for (cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg))
+        if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SO_RXQ_OVFL)
+            ovfl = *(unsigned int *)CMSG_DATA(cmsg);
+
+    drop = ovfl - ctrl->ovfl;
+    ctrl->ovfl = ovfl;
+
+    return drop;
+}
+
+static void
+ctrl_ev_cb(EV_P_ struct ev_io *io, int events)
+{
+    struct ctrl *ctrl = container_of(io, struct ctrl, io);
+    const char *str;
+    size_t len;
+    char buf[1024];
+    int drops;
+    int level;
+    int err;
+
+    memset(buf, 0, sizeof(buf));
+    len = sizeof(buf) - 1;
+    err = wpa_ctrl_recv(ctrl->wpa, buf, &len);
+    if (err < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return;
+        goto err_close;
+    }
+
+    /* Example events:
+     *
+     * <3>AP-STA-CONNECTED 60:b4:f7:f0:0a:19
+     * <3>AP-STA-CONNECTED-PWD 60:b4:f7:f0:0a:19 passphrase
+     * <3>AP-STA-DISCONNECTED 60:b4:f7:f0:0a:19
+     * <3>CTRL-EVENT-CONNECTED - Connection to 00:1d:73:73:88:ea completed [id=0 id_str=]
+     * <3>CTRL-EVENT-DISCONNECTED bssid=00:1d:73:73:88:ea reason=3 locally_generated=1
+     */
+    printf("Received (%d): %s\n", ctrl->ssid_index, buf);
+    if (!(str = index(buf, '>')))
+        return;
+    if (sscanf(buf, "<%d>", &level) != 1)
+        return;
+
+    str++;
+        
+    printf("Calling callback\n");
+
+    if (strncmp("AP-STA-CONNECTED ", str, 17) == 0) {
+	if (!(str = index(buf, ' ')))
+		return;
+
+	wifi_associated_dev_t sta;
+	memset(&sta, 0, sizeof(sta));
+
+        sscanf(str, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+           &sta.cli_MACAddress[0], &sta.cli_MACAddress[1], &sta.cli_MACAddress[2],
+           &sta.cli_MACAddress[3], &sta.cli_MACAddress[4], &sta.cli_MACAddress[5]);
+
+	(clients_connect_cb)(ctrl->ssid_index, &sta);
+	goto handled;
+    }
+    if (strncmp("AP-STA-DISCONNECTED ", str, 20) == 0) {
+        if (!(str = index(buf, ' ')))
+                return;
+
+	(clients_disconnect_cb)(ctrl->ssid_index,str,0);
+	goto handled;
+    }
+
+    printf("Event not supported!!\n");
+
+handled:
+	
+    if ((drops = ctrl_get_drops(ctrl))) {
+        printf("%s: dropped %d messages", ctrl->bss, drops);
+        if (ctrl->overrun)
+            ctrl->overrun(ctrl);
+    }
+
+    return;
+
+err_close:
+    ev_timer_again(EV_DEFAULT_ &ctrl->retry);
+}
+
+static int
+ctrl_open(struct ctrl *ctrl)
+{
+    int fd;
+
+    if (ctrl->wpa)
+        return 0;
+
+    ctrl->wpa = wpa_ctrl_open(ctrl->sockpath);
+    if (!ctrl->wpa)
+        goto err;
+
+    if (wpa_ctrl_attach(ctrl->wpa) < 0)
+        goto err_close;
+
+    fd = wpa_ctrl_get_fd(ctrl->wpa);
+    if (fd < 0)
+        goto err_detach;
+
+    if (setsockopt(fd, SOL_SOCKET, SO_RXQ_OVFL, (int[]){1}, sizeof(int)) < 0)
+        goto err_detach;
+
+    ev_io_init(&ctrl->io, ctrl_ev_cb, fd, EV_READ);
+    ev_io_start(EV_DEFAULT_ &ctrl->io);
+    printf("%s: opened", ctrl->bss);
+
+    return 0;
+
+err_detach:
+    wpa_ctrl_detach(ctrl->wpa);
+err_close:
+    wpa_ctrl_close(ctrl->wpa);
+err:
+    ctrl->wpa = NULL;
+    return -1;
+}
+
+static void
+ctrl_stat_cb(EV_P_ ev_stat *stat, int events)
+{
+    struct ctrl *ctrl = container_of(stat, struct ctrl, stat);
+    printf("%s: file state changed", ctrl->bss);
+    ctrl_open(ctrl);
+}
+
+static void
+ctrl_retry_cb(EV_P_ ev_timer *timer, int events)
+{
+    struct ctrl *ctrl = container_of(timer, struct ctrl, retry);
+    printf("%s: retrying", ctrl->bss);
+    if (ctrl_open(ctrl) < 0)
+        ev_timer_again(EV_DEFAULT_ &ctrl->retry);
+}
+
+int
+ctrl_enable(struct ctrl *ctrl)
+{
+    if (ctrl->wpa)
+        return 0;
+
+    if (!ctrl->stat.cb) {
+        ev_stat_init(&ctrl->stat, ctrl_stat_cb, ctrl->sockpath, 0.);
+        ev_stat_start(EV_DEFAULT_ &ctrl->stat);
+    }
+    printf("enabling for %s\n", ctrl->sockpath);
+    if (!ctrl->retry.cb)
+        ev_timer_init(&ctrl->retry, ctrl_retry_cb, 0., 5.);
+
+    return ctrl_open(ctrl);
 }
 
 
+static int init_wpa()
+{
+	int ret = 0 ;
+	ULONG s, snum;
+	char * sock_path;
+	int i = 0;
+
+	ret = wifi_getSSIDNumberOfEntries(&snum);
+	if (ret != RETURN_OK) {
+		printf("%s: failed to get SSID count", __func__);
+		return RETURN_ERR;
+	}
+	printf("initializing sockets to hostapd\n");
+	if (snum > MAX_SUPPORTED_IFACES)
+	{
+		printf("more ssid than supported! %d\n", snum);
+		return RETURN_ERR;
+	}
+	for (s = 0; s < snum; s++) {
+		sprintf(wpa_ctrl[s].sockpath, "%s%d", SOCK_PREFIX, s);
+		wpa_ctrl[s].ssid_index = s;
+		ctrl_open(&wpa_ctrl[s]);
+		ctrl_enable(&wpa_ctrl[s]);
+	}
+	initialized = 1;
+	return RETURN_OK;
+}
+void wifi_newApAssociatedDevice_callback_register(wifi_newApAssociatedDevice_callback callback_proc)
+{
+    clients_connect_cb = callback_proc;
+    if (!initialized)
+	init_wpa();
+}
+
+void wifi_apDisassociatedDevice_callback_register(wifi_apDisassociatedDevice_callback callback_proc)
+{
+    clients_disconnect_cb = callback_proc;
+    if (!initialized)
+	init_wpa();
+}
 
 
 

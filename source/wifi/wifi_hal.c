@@ -34,6 +34,8 @@
 
 #define MAC_ALEN 6
 
+#define HAL_NETLINK_IMPL
+
 #define MAX_BUF_SIZE 128
 #define MAX_CMD_SIZE 1024
 #define IF_NAMESIZE 10
@@ -100,6 +102,23 @@ static struct nla_policy rate_policy[NL80211_RATE_INFO_MAX + 1] = {
 
 static struct nla_policy tid_policy[NL80211_TID_STATS_MAX + 1] = {
 };
+
+typedef struct _wifi_channelStats_loc {
+    INT array_size;
+    INT  ch_number;
+    BOOL ch_in_pool;
+    INT  ch_noise;
+    BOOL ch_radar_noise;
+    INT  ch_max_80211_rssi;
+    INT  ch_non_80211_noise;
+    INT  ch_utilization;
+    ULLONG ch_utilization_total;
+    ULLONG ch_utilization_busy;
+    ULLONG ch_utilization_busy_tx;
+    ULLONG ch_utilization_busy_rx;
+    ULLONG ch_utilization_busy_self;
+    ULLONG ch_utilization_busy_ext;
+} wifi_channelStats_t_loc;
 
 //For 5g Alias Interfaces
 static BOOL priv_flag = TRUE;
@@ -6220,54 +6239,7 @@ INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex,wifi_associated_dev2
         return RETURN_OK;
 
 }
-INT wifi_getRadioChannelStats(
-        INT radioIndex,
-        wifi_channelStats_t *input_output_channelStats_array,
-        INT array_size)
-{
-        WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-	FILE *fp = NULL;
-        char HConf_file[MAX_BUF_SIZE] = {'\0'};
-        char interface_name[50] = {0};
-	char pipeCmd[MAX_CMD_SIZE] = {0};
-        char str[MAX_BUF_SIZE] = {0};
-        wifi_channelStats_t *out=NULL;
-	int i=0;
-        out = &input_output_channelStats_array[0];
- 	const char *StatsName[] = {"active time",
-                                   "busy time",
-                                   "receive time",
-                                   "transmit time",
-                                   "noise"  };
 
-        sprintf(HConf_file,"%s%d%s","/nvram/hostapd",radioIndex,".conf");
-        GetInterfaceName(interface_name,HConf_file);
-        snprintf(pipeCmd, sizeof(pipeCmd), "iw dev %s survey dump > /tmp/Channel_Stats.txt", interface_name);
-        system(pipeCmd);
-	for(i=0;i<5;i++)
-	{
-		sprintf(pipeCmd,"%s%s%s","cat  /tmp/Channel_Stats.txt |tail | grep ",StatsName[i]," | cut -d ':' -f2  | tr -d '\t' | cut -d ' ' -f1");
-                fp = popen(pipeCmd, "r");
-                if(fp)
-                {
-				fgets(str, MAX_BUF_SIZE, fp);
-//Updating the channel status in Milli Seconds(ms), few informations such as ch_radar_noise,ch_max_80211_rssi,ch_utilization,ch_utilization_busy_self,ch_utilization_busy_ext need to be updated 
-				 if(strcmp(StatsName[i],"active time") == 0)
-					out->ch_utilization_total = atol(str);
-				 else if(strcmp(StatsName[i],"busy time") == 0)
-					out->ch_utilization_busy = atol(str);
-				 else if(strcmp(StatsName[i],"receive time") == 0)
-					out->ch_utilization_busy_rx = atol(str);
-				 else if(strcmp(StatsName[i],"transmit time") == 0)
-					out->ch_utilization_busy_tx = atol(str);
-				 else if(strcmp(StatsName[i],"noise") == 0)
-				 	out->ch_non_80211_noise = atoi(str);
-				 else
-					printf("No Channel matches found");
-		}
-	}
-        return RETURN_OK;
-}
 INT wifi_getSSIDTrafficStats2(INT ssidIndex,wifi_ssidTrafficStats2_t *output_struct)
 {
 	WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
@@ -6501,6 +6473,22 @@ static void mac_addr_ntoa(char *mac_addr, unsigned char *arg)
     return;
 }
 
+static int ieee80211_frequency_to_channel(int freq)
+{
+    if (freq == 2484)
+        return 14;
+    else if (freq < 2484)
+        return (freq - 2407) / 5;
+    else if (freq >= 4910 && freq <= 4980)
+        return (freq - 4000) / 5;
+    else if (freq <= 45000)
+        return (freq - 5000) / 5;
+    else if (freq >= 58320 && freq <= 64800)
+        return (freq - 56160) / 2160;
+    else
+        return 0;
+}
+
 static int initSock80211(Netlink* nl) {
     nl->socket = nl_socket_alloc();
     if (!nl->socket) {
@@ -6544,6 +6532,7 @@ static int nlfree(Netlink *nl)
     return 0;
 }
 
+#ifdef HAL_NETLINK_IMPL
 static int rxStatsInfo_callback(struct nl_msg *msg, void *arg) {
     struct nlattr *tb[NL80211_ATTR_MAX + 1];
     struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
@@ -6629,9 +6618,11 @@ static int rxStatsInfo_callback(struct nl_msg *msg, void *arg) {
       //rssi_array need to be filled
       return NL_SKIP;
 }
+#endif
 
 INT wifi_getApAssociatedDeviceRxStatsResult(INT radioIndex, mac_address_t *clientMacAddress, wifi_associated_dev_rate_info_rx_stats_t **stats_array, UINT *output_array_size, ULLONG *handle)
 {
+#ifdef HAL_NETLINK_IMPL
     Netlink nl;
     char phy_addr[MAC_ALEN];
     char if_name[10];
@@ -6674,8 +6665,13 @@ INT wifi_getApAssociatedDeviceRxStatsResult(INT radioIndex, mac_address_t *clien
     nlmsg_free(msg);
     nlfree(&nl);
     return RETURN_OK;
+#else
+    //TODO Implement me
+    return RETURN_OK;
+#endif
 }
 
+#ifdef HAL_NETLINK_IMPL
 static int txStatsInfo_callback(struct nl_msg *msg, void *arg) {
     struct nlattr *tb[NL80211_ATTR_MAX + 1];
     struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
@@ -6765,9 +6761,11 @@ static int txStatsInfo_callback(struct nl_msg *msg, void *arg) {
 
     return NL_SKIP;
 }
+#endif
 
 INT wifi_getApAssociatedDeviceTxStatsResult(INT radioIndex, mac_address_t *clientMacAddress, wifi_associated_dev_rate_info_tx_stats_t **stats_array, UINT *output_array_size, ULLONG *handle)
 {
+#ifdef HAL_NETLINK_IMPL
     Netlink nl;
     char mac_addr[MAC_ALEN];
     char if_name[10];
@@ -6810,6 +6808,10 @@ INT wifi_getApAssociatedDeviceTxStatsResult(INT radioIndex, mac_address_t *clien
     nlmsg_free(msg);
     nlfree(&nl);
     return RETURN_OK;
+#else
+    //TODO Implement me
+    return RETURN_OK;
+#endif
 }
 
 INT wifi_getBSSTransitionActivation(UINT apIndex, BOOL *activate)
@@ -6854,6 +6856,187 @@ INT wifi_getNeighborReportActivation(UINT apIndex, BOOL *activate)
 
     return RETURN_OK;
 
+}
+#ifdef HAL_NETLINK_IMPL
+static int chanSurveyInfo_callback(struct nl_msg *msg, void *arg) {
+    struct nlattr *tb[NL80211_ATTR_MAX + 1];
+    struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+    struct nlattr *sinfo[NL80211_SURVEY_INFO_MAX + 1];
+    char dev[20];
+    int freq =0 ;
+    static int i=0;
+
+    wifi_channelStats_t_loc *out = (wifi_channelStats_t_loc*)arg;
+
+    static struct nla_policy survey_policy[NL80211_SURVEY_INFO_MAX + 1] = {
+    };
+
+    nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),genlmsg_attrlen(gnlh, 0), NULL);
+
+    if_indextoname(nla_get_u32(tb[NL80211_ATTR_IFINDEX]), dev);
+
+    if (!tb[NL80211_ATTR_SURVEY_INFO]) {
+        fprintf(stderr, "survey data missing!\n");
+        return NL_SKIP;
+    }
+
+    if (nla_parse_nested(sinfo, NL80211_SURVEY_INFO_MAX,tb[NL80211_ATTR_SURVEY_INFO],survey_policy))
+    {
+        fprintf(stderr, "failed to parse nested attributes!\n");
+        return NL_SKIP;
+    }
+
+
+    if(out[0].array_size == 1 )
+    {
+        if(sinfo[NL80211_SURVEY_INFO_IN_USE])
+        {
+	    if (sinfo[NL80211_SURVEY_INFO_FREQUENCY])
+                freq = nla_get_u32(sinfo[NL80211_SURVEY_INFO_FREQUENCY]);
+	    out[0].ch_number = ieee80211_frequency_to_channel(freq);
+
+            if (sinfo[NL80211_SURVEY_INFO_NOISE])
+	        out[0].ch_noise = nla_get_u8(sinfo[NL80211_SURVEY_INFO_NOISE]);
+            if (sinfo[NL80211_SURVEY_INFO_TIME_RX])
+                out[0].ch_utilization_busy_rx = nla_get_u64(sinfo[NL80211_SURVEY_INFO_TIME_RX]);
+            if (sinfo[NL80211_SURVEY_INFO_TIME_TX])
+	        out[0].ch_utilization_busy_tx = nla_get_u64(sinfo[NL80211_SURVEY_INFO_TIME_TX]);
+            if (sinfo[NL80211_SURVEY_INFO_TIME_BUSY])
+	        out[0].ch_utilization_busy = nla_get_u64(sinfo[NL80211_SURVEY_INFO_TIME_BUSY]);
+            if (sinfo[NL80211_SURVEY_INFO_TIME_EXT_BUSY])
+	        out[0].ch_utilization_busy_ext = nla_get_u64(sinfo[NL80211_SURVEY_INFO_TIME_EXT_BUSY]);
+            if (sinfo[NL80211_SURVEY_INFO_TIME])
+	        out[0].ch_utilization_total = nla_get_u64(sinfo[NL80211_SURVEY_INFO_TIME]);
+	    return NL_STOP;
+        }
+   }
+   else
+   {
+       if ( i <=  out[0].array_size )
+       {
+           if (sinfo[NL80211_SURVEY_INFO_FREQUENCY])
+               freq = nla_get_u32(sinfo[NL80211_SURVEY_INFO_FREQUENCY]);
+           out[i].ch_number = ieee80211_frequency_to_channel(freq);
+
+	   if (sinfo[NL80211_SURVEY_INFO_NOISE])
+               out[i].ch_noise = nla_get_u8(sinfo[NL80211_SURVEY_INFO_NOISE]);
+	   if (sinfo[NL80211_SURVEY_INFO_TIME_RX])
+               out[i].ch_utilization_busy_rx = nla_get_u64(sinfo[NL80211_SURVEY_INFO_TIME_RX]);
+           if (sinfo[NL80211_SURVEY_INFO_TIME_TX])
+               out[i].ch_utilization_busy_tx = nla_get_u64(sinfo[NL80211_SURVEY_INFO_TIME_TX]);
+           if (sinfo[NL80211_SURVEY_INFO_TIME_BUSY])
+               out[i].ch_utilization_busy = nla_get_u64(sinfo[NL80211_SURVEY_INFO_TIME_BUSY]);
+           if (sinfo[NL80211_SURVEY_INFO_TIME_EXT_BUSY])
+               out[i].ch_utilization_busy_ext = nla_get_u64(sinfo[NL80211_SURVEY_INFO_TIME_EXT_BUSY]);
+           if (sinfo[NL80211_SURVEY_INFO_TIME])
+               out[i].ch_utilization_total = nla_get_u64(sinfo[NL80211_SURVEY_INFO_TIME]);
+      }
+   }
+
+   i++;
+   return NL_SKIP;
+}
+#endif
+
+INT wifi_getRadioChannelStats(INT radioIndex,wifi_channelStats_t *input_output_channelStats_array,INT array_size)
+{
+    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+#ifdef HAL_NETLINK_IMPL
+    Netlink nl;
+    wifi_channelStats_t_loc local[array_size];
+    char  if_name[10];
+
+    local[0].array_size = array_size;
+
+    snprintf(if_name,sizeof(if_name),"wlan%d",radioIndex);
+
+    nl.id = initNl80211(&nl);
+
+    if (nl.id < 0) {
+        fprintf(stderr, "Error initializing netlink \n");
+        return -1;
+    }
+
+    struct nl_msg* msg = nlmsg_alloc();
+
+    if (!msg) {
+        fprintf(stderr, "Failed to allocate netlink message.\n");
+        nlfree(&nl);
+        return -2;
+    }
+
+    genlmsg_put(msg,
+                NL_AUTO_PORT,
+                NL_AUTO_SEQ,
+                nl.id,
+                0,
+                NLM_F_DUMP,
+                NL80211_CMD_GET_SURVEY,
+                0);
+
+    nla_put_u32(msg, NL80211_ATTR_IFINDEX, if_nametoindex(if_name));
+    nl_send_auto(nl.socket, msg);
+    nl_cb_set(nl.cb,NL_CB_VALID,NL_CB_CUSTOM,chanSurveyInfo_callback,local);
+    nl_recvmsgs(nl.socket, nl.cb);
+    nlmsg_free(msg);
+    nl_cb_put(nl.cb);
+    nlfree(&nl);
+    //Copying the Values
+    for(int i=0;i<=array_size;i++)
+    {
+        input_output_channelStats_array[i].ch_number = local[i].ch_number;
+        input_output_channelStats_array[i].ch_noise = local[i].ch_noise;
+	input_output_channelStats_array[i].ch_utilization_busy_rx = local[i].ch_utilization_busy_rx;
+	input_output_channelStats_array[i].ch_utilization_busy_tx = local[i].ch_utilization_busy_tx;
+	input_output_channelStats_array[i].ch_utilization_busy = local[i].ch_utilization_busy;
+	input_output_channelStats_array[i].ch_utilization_busy_ext = local[i].ch_utilization_busy_ext;
+	input_output_channelStats_array[i].ch_utilization_total = local[i].ch_utilization_total;
+	//TODO: ch_radar_noise, ch_max_80211_rssi, ch_non_80211_noise, ch_utilization_busy_self
+    }
+    return RETURN_OK;
+#else
+    FILE *fp = NULL;
+    char HConf_file[MAX_BUF_SIZE] = {'\0'};
+    char interface_name[50] = {0};
+    char pipeCmd[MAX_CMD_SIZE] = {0};
+    char str[MAX_BUF_SIZE] = {0};
+    wifi_channelStats_t *out=NULL;
+    int i=0;
+    out = &input_output_channelStats_array[0];
+    const char *StatsName[] = {"active time",
+                                "busy time",
+                                "receive time",
+                                "transmit time",
+                                "noise"  };
+
+     sprintf(HConf_file,"%s%d%s","/nvram/hostapd",radioIndex,".conf");
+     GetInterfaceName(interface_name,HConf_file);
+     snprintf(pipeCmd, sizeof(pipeCmd), "iw dev %s survey dump > /tmp/Channel_Stats.txt", interface_name);
+     system(pipeCmd);
+     for(i=0;i<5;i++)
+     {
+         sprintf(pipeCmd,"%s%s%s","cat  /tmp/Channel_Stats.txt |tail | grep ",StatsName[i]," | cut -d ':' -f2  | tr -d '\t' | cut -d ' ' -f1");
+         fp = popen(pipeCmd, "r");
+         if(fp)
+         {
+             fgets(str, MAX_BUF_SIZE, fp);
+             //Updating the channel status in Milli Seconds(ms), few informations such as ch_radar_noise,ch_max_80211_rssi,ch_utilization,ch_utilization_busy_self,ch_utilization_busy_ext need to be updated
+             if(strcmp(StatsName[i],"active time") == 0)
+                 out->ch_utilization_total = atol(str);
+             else if(strcmp(StatsName[i],"busy time") == 0)
+                 out->ch_utilization_busy = atol(str);
+             else if(strcmp(StatsName[i],"receive time") == 0)
+                 out->ch_utilization_busy_rx = atol(str);
+             else if(strcmp(StatsName[i],"transmit time") == 0)
+                 out->ch_utilization_busy_tx = atol(str);
+             else if(strcmp(StatsName[i],"noise") == 0)
+                 out->ch_non_80211_noise = atoi(str);
+             else
+                 printf("No Channel matches found");
+         }
+     }
+     return RETURN_OK;
+#endif
 }
 
 void wifi_apDisassociatedDevice_callback_register(wifi_apDisassociatedDevice_callback callback_proc)

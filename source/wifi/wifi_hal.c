@@ -6955,7 +6955,7 @@ INT wifi_getRadioChannelStats(INT radioIndex,wifi_channelStats_t *input_output_c
 
     snprintf(if_name,sizeof(if_name),"wlan%d",radioIndex);
 
-    nl.id = initNl80211(&nl);
+    nl.id = initSock80211(&nl);
 
     if (nl.id < 0) {
         fprintf(stderr, "Error initializing netlink \n");

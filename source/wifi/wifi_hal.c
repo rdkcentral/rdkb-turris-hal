@@ -94,6 +94,12 @@ typedef struct {
     struct nl_cb* cb;
 } Netlink;
 
+static int mac_addr_aton(unsigned char *mac_addr, char *arg);
+static void mac_addr_ntoa(char *mac_addr, unsigned char *arg);
+static int ieee80211_frequency_to_channel(int freq);
+static int initSock80211(Netlink* nl);
+static int nlfree(Netlink *nl);
+
 static struct nla_policy stats_policy[NL80211_STA_INFO_MAX + 1] = {
     [NL80211_STA_INFO_TX_BITRATE] = { .type = NLA_NESTED },
     [NL80211_STA_INFO_RX_BITRATE] = { .type = NLA_NESTED },
@@ -122,6 +128,17 @@ typedef struct _wifi_channelStats_loc {
     ULLONG ch_utilization_busy_self;
     ULLONG ch_utilization_busy_ext;
 } wifi_channelStats_t_loc;
+
+typedef struct _wifi_device_loc {
+    INT  wifi_devIndex;
+    UCHAR wifi_devMacAddress[6];
+    CHAR wifi_devIPAddress[64];
+    BOOL wifi_devAssociatedDeviceAuthentiationState;
+    INT  wifi_devSignalStrength;
+    INT  wifi_devTxRate;
+    INT  wifi_devRxRate;
+} wifi_device_t_loc;
+
 #endif
 
 //For 5g Alias Interfaces
@@ -2995,14 +3012,129 @@ INT wifi_getAllAssociatedDeviceDetail(INT apIndex, ULONG *output_ulong, wifi_dev
 	}
 }
 
+#ifdef HAL_NETLINK_IMPL
+static int AssoDevInfo_callback(struct nl_msg *msg, void *arg) {
+    struct nlattr *tb[NL80211_ATTR_MAX + 1];
+    struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+    struct nlattr *sinfo[NL80211_STA_INFO_MAX + 1];
+    struct nlattr *rinfo[NL80211_RATE_INFO_MAX + 1];
+    char mac_addr[20];
+    static int count=0;
+    int rate=0;
+
+    wifi_device_t_loc *out = (wifi_device_t_loc*)arg;
+
+    nla_parse(tb,
+              NL80211_ATTR_MAX,
+              genlmsg_attrdata(gnlh, 0),
+              genlmsg_attrlen(gnlh, 0),
+              NULL);
+
+    if(!tb[NL80211_ATTR_STA_INFO]) {
+        fprintf(stderr, "sta stats missing!\n");
+        return NL_SKIP;
+    }
+
+
+    if(nla_parse_nested(sinfo, NL80211_STA_INFO_MAX,tb[NL80211_ATTR_STA_INFO], stats_policy)) {
+        fprintf(stderr, "failed to parse nested attributes!\n");
+        return NL_SKIP;
+    }
+
+    //devIndex starts from 1
+    if( ++count == out->wifi_devIndex )
+    {
+        mac_addr_ntoa(mac_addr, nla_data(tb[NL80211_ATTR_MAC]));
+        //Getting the mac addrress
+	mac_addr_aton(out->wifi_devMacAddress,mac_addr);
+
+        if(nla_parse_nested(rinfo, NL80211_RATE_INFO_MAX, sinfo[NL80211_STA_INFO_TX_BITRATE], rate_policy)) {
+            fprintf(stderr, "failed to parse nested rate attributes!");
+            return;
+        }
+
+        if(sinfo[NL80211_STA_INFO_TX_BITRATE]) {
+             if(rinfo[NL80211_RATE_INFO_BITRATE])
+			rate=nla_get_u16(rinfo[NL80211_RATE_INFO_BITRATE]);
+			out->wifi_devTxRate = rate/10;
+        }
+
+        if(nla_parse_nested(rinfo, NL80211_RATE_INFO_MAX, sinfo[NL80211_STA_INFO_RX_BITRATE], rate_policy)) {
+                 fprintf(stderr, "failed to parse nested rate attributes!");
+                 return;
+        }
+
+	if(sinfo[NL80211_STA_INFO_RX_BITRATE]) {
+             if(rinfo[NL80211_RATE_INFO_BITRATE])
+                        rate=nla_get_u16(rinfo[NL80211_RATE_INFO_BITRATE]);
+			out->wifi_devRxRate = rate/10;
+        }
+	if (sinfo[NL80211_STA_INFO_SIGNAL_AVG])
+                out->wifi_devSignalStrength = (int8_t)nla_get_u8(sinfo[NL80211_STA_INFO_SIGNAL_AVG]);
+
+	out->wifi_devAssociatedDeviceAuthentiationState = 1;
+
+	return NL_STOP;
+    }
+
+    return NL_SKIP;
+
+}
+#endif
+
 INT wifi_getAssociatedDeviceDetail(INT apIndex, INT devIndex, wifi_device_t *output_struct)
 {
-	if (NULL == output_struct) {
-		return RETURN_ERR;
-	} else {
-		memset(output_struct, 0, sizeof(wifi_device_t));
-		return RETURN_OK;
-	}
+#ifdef HAL_NETLINK_IMPL
+    Netlink nl;
+    char  if_name[10];
+
+    wifi_device_t_loc loc;
+    loc.wifi_devIndex = devIndex;
+
+    snprintf(if_name,sizeof(if_name),"wlan%d",apIndex);
+
+    nl.id = initSock80211(&nl);
+
+    if (nl.id < 0) {
+        fprintf(stderr, "Error initializing netlink \n");
+        return -1;
+    }
+
+    struct nl_msg* msg = nlmsg_alloc();
+
+    if (!msg) {
+        fprintf(stderr, "Failed to allocate netlink message.\n");
+        nlfree(&nl);
+        return -2;
+    }
+
+    genlmsg_put(msg,
+                NL_AUTO_PORT,
+                NL_AUTO_SEQ,
+                nl.id,
+                0,
+                NLM_F_DUMP,
+                NL80211_CMD_GET_STATION,
+                0);
+
+    nla_put_u32(msg, NL80211_ATTR_IFINDEX, if_nametoindex(if_name));
+    nl_send_auto(nl.socket, msg);
+    nl_cb_set(nl.cb,NL_CB_VALID,NL_CB_CUSTOM,AssoDevInfo_callback,&loc);
+    nl_recvmsgs(nl.socket, nl.cb);
+    nlmsg_free(msg);
+    nl_cb_put(nl.cb);
+    nlfree(&nl);
+
+    output_struct->wifi_devAssociatedDeviceAuthentiationState = (wifi_device_t*)loc.wifi_devAssociatedDeviceAuthentiationState;
+    output_struct->wifi_devRxRate = (wifi_device_t*)loc.wifi_devRxRate;
+    output_struct->wifi_devTxRate = (wifi_device_t*)loc.wifi_devTxRate;
+    output_struct->wifi_devSignalStrength = (wifi_device_t*)loc.wifi_devSignalStrength;
+    memcpy(&output_struct->wifi_devMacAddress,&loc.wifi_devMacAddress,sizeof(wifi_device_t));
+    return RETURN_OK;
+#else
+   //ToDo: Implement me
+   return RETURN_OK;
+#endif
 }
 
 INT wifi_kickAssociatedDevice(INT apIndex, wifi_device_t *device)

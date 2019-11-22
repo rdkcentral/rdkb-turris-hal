@@ -94,6 +94,91 @@ typedef struct {
     struct nl_cb* cb;
 } Netlink;
 
+static int mac_addr_aton(unsigned char *mac_addr, char *arg)
+{
+    unsigned int mac_addr_int[6]={};
+    sscanf(arg, "%x:%x:%x:%x:%x:%x", mac_addr_int+0, mac_addr_int+1, mac_addr_int+2, mac_addr_int+3, mac_addr_int+4, mac_addr_int+5);
+    mac_addr[0] = mac_addr_int[0];
+    mac_addr[1] = mac_addr_int[1];
+    mac_addr[2] = mac_addr_int[2];
+    mac_addr[3] = mac_addr_int[3];
+    mac_addr[4] = mac_addr_int[4];
+    mac_addr[5] = mac_addr_int[5];
+    return 0;
+}
+
+static void mac_addr_ntoa(char *mac_addr, unsigned char *arg)
+{
+    unsigned int mac_addr_int[6]={};
+    mac_addr_int[0] = arg[0];
+    mac_addr_int[1] = arg[1];
+    mac_addr_int[2] = arg[2];
+    mac_addr_int[3] = arg[3];
+    mac_addr_int[4] = arg[4];
+    mac_addr_int[5] = arg[5];
+    snprintf(mac_addr, 20, "%02x:%02x:%02x:%02x:%02x:%02x", mac_addr_int[0], mac_addr_int[1],mac_addr_int[2],mac_addr_int[3],mac_addr_int[4],mac_addr_int[5]);
+    return;
+}
+
+static int ieee80211_frequency_to_channel(int freq)
+{
+    if (freq == 2484)
+        return 14;
+    else if (freq < 2484)
+        return (freq - 2407) / 5;
+    else if (freq >= 4910 && freq <= 4980)
+        return (freq - 4000) / 5;
+    else if (freq <= 45000)
+        return (freq - 5000) / 5;
+    else if (freq >= 58320 && freq <= 64800)
+        return (freq - 56160) / 2160;
+    else
+        return 0;
+}
+
+static int initSock80211(Netlink* nl) {
+    nl->socket = nl_socket_alloc();
+    if (!nl->socket) {
+        fprintf(stderr, "Failing to allocate the  sock\n");
+        return -ENOMEM;
+    }
+
+    nl_socket_set_buffer_size(nl->socket, 8192, 8192);
+
+    if (genl_connect(nl->socket)) {
+        fprintf(stderr, "Failed to connect\n");
+        nl_close(nl->socket);
+        nl_socket_free(nl->socket);
+        return -ENOLINK;
+    }
+
+    nl->id = genl_ctrl_resolve(nl->socket, "nl80211");
+    if (nl->id< 0) {
+        fprintf(stderr, "interface not found.\n");
+        nl_close(nl->socket);
+        nl_socket_free(nl->socket);
+        return -ENOENT;
+    }
+
+    nl->cb = nl_cb_alloc(NL_CB_DEFAULT);
+    if ((!nl->cb)) {
+        fprintf(stderr, "Failed to allocate netlink callback.\n");
+        nl_close(nl->socket);
+        nl_socket_free(nl->socket);
+        return ENOMEM;
+    }
+
+    return nl->id;
+}
+
+static int nlfree(Netlink *nl)
+{
+    nl_cb_put(nl->cb);
+    nl_close(nl->socket);
+    nl_socket_free(nl->socket);
+    return 0;
+}
+
 static struct nla_policy stats_policy[NL80211_STA_INFO_MAX + 1] = {
     [NL80211_STA_INFO_TX_BITRATE] = { .type = NLA_NESTED },
     [NL80211_STA_INFO_RX_BITRATE] = { .type = NLA_NESTED },
@@ -122,6 +207,17 @@ typedef struct _wifi_channelStats_loc {
     ULLONG ch_utilization_busy_self;
     ULLONG ch_utilization_busy_ext;
 } wifi_channelStats_t_loc;
+
+typedef struct wifi_device_info {
+    INT  wifi_devIndex;
+    UCHAR wifi_devMacAddress[6];
+    CHAR wifi_devIPAddress[64];
+    BOOL wifi_devAssociatedDeviceAuthentiationState;
+    INT  wifi_devSignalStrength;
+    INT  wifi_devTxRate;
+    INT  wifi_devRxRate;
+} wifi_device_info_t;
+
 #endif
 
 //For 5g Alias Interfaces
@@ -2995,14 +3091,206 @@ INT wifi_getAllAssociatedDeviceDetail(INT apIndex, ULONG *output_ulong, wifi_dev
 	}
 }
 
+#ifdef HAL_NETLINK_IMPL
+static int AssoDevInfo_callback(struct nl_msg *msg, void *arg) {
+    struct nlattr *tb[NL80211_ATTR_MAX + 1];
+    struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+    struct nlattr *sinfo[NL80211_STA_INFO_MAX + 1];
+    struct nlattr *rinfo[NL80211_RATE_INFO_MAX + 1];
+    char mac_addr[20];
+    static int count=0;
+    int rate=0;
+
+    wifi_device_info_t *out = (wifi_device_info_t*)arg;
+
+    nla_parse(tb,
+              NL80211_ATTR_MAX,
+              genlmsg_attrdata(gnlh, 0),
+              genlmsg_attrlen(gnlh, 0),
+              NULL);
+
+    if(!tb[NL80211_ATTR_STA_INFO]) {
+        fprintf(stderr, "sta stats missing!\n");
+        return NL_SKIP;
+    }
+
+
+    if(nla_parse_nested(sinfo, NL80211_STA_INFO_MAX,tb[NL80211_ATTR_STA_INFO], stats_policy)) {
+        fprintf(stderr, "failed to parse nested attributes!\n");
+        return NL_SKIP;
+    }
+
+    //devIndex starts from 1
+    if( ++count == out->wifi_devIndex )
+    {
+        mac_addr_ntoa(mac_addr, nla_data(tb[NL80211_ATTR_MAC]));
+        //Getting the mac addrress
+        mac_addr_aton(out->wifi_devMacAddress,mac_addr);
+
+        if(nla_parse_nested(rinfo, NL80211_RATE_INFO_MAX, sinfo[NL80211_STA_INFO_TX_BITRATE], rate_policy)) {
+            fprintf(stderr, "failed to parse nested rate attributes!");
+            return;
+        }
+
+        if(sinfo[NL80211_STA_INFO_TX_BITRATE]) {
+            if(rinfo[NL80211_RATE_INFO_BITRATE])
+                rate=nla_get_u16(rinfo[NL80211_RATE_INFO_BITRATE]);
+                out->wifi_devTxRate = rate/10;
+        }
+
+        if(nla_parse_nested(rinfo, NL80211_RATE_INFO_MAX, sinfo[NL80211_STA_INFO_RX_BITRATE], rate_policy)) {
+            fprintf(stderr, "failed to parse nested rate attributes!");
+            return;
+        }
+
+        if(sinfo[NL80211_STA_INFO_RX_BITRATE]) {
+            if(rinfo[NL80211_RATE_INFO_BITRATE])
+                rate=nla_get_u16(rinfo[NL80211_RATE_INFO_BITRATE]);
+                out->wifi_devRxRate = rate/10;
+        }
+        if(sinfo[NL80211_STA_INFO_SIGNAL_AVG])
+            out->wifi_devSignalStrength = (int8_t)nla_get_u8(sinfo[NL80211_STA_INFO_SIGNAL_AVG]);
+
+        out->wifi_devAssociatedDeviceAuthentiationState = 1;
+        count = 0; //starts the count for next cycle
+        return NL_STOP;
+    }
+
+    return NL_SKIP;
+
+}
+#endif
+
 INT wifi_getAssociatedDeviceDetail(INT apIndex, INT devIndex, wifi_device_t *output_struct)
 {
-	if (NULL == output_struct) {
-		return RETURN_ERR;
-	} else {
-		memset(output_struct, 0, sizeof(wifi_device_t));
-		return RETURN_OK;
-	}
+#ifdef HAL_NETLINK_IMPL
+    Netlink nl;
+    char  if_name[10];
+
+    wifi_device_info_t info;
+    info.wifi_devIndex = devIndex;
+
+    snprintf(if_name,sizeof(if_name),"wlan%d",apIndex);
+
+    nl.id = initSock80211(&nl);
+
+    if (nl.id < 0) {
+        fprintf(stderr, "Error initializing netlink \n");
+        return -1;
+    }
+
+    struct nl_msg* msg = nlmsg_alloc();
+
+    if (!msg) {
+        fprintf(stderr, "Failed to allocate netlink message.\n");
+        nlfree(&nl);
+        return -2;
+    }
+
+    genlmsg_put(msg,
+                NL_AUTO_PORT,
+                NL_AUTO_SEQ,
+                nl.id,
+                0,
+                NLM_F_DUMP,
+                NL80211_CMD_GET_STATION,
+                0);
+
+    nla_put_u32(msg, NL80211_ATTR_IFINDEX, if_nametoindex(if_name));
+    nl_send_auto(nl.socket, msg);
+    nl_cb_set(nl.cb,NL_CB_VALID,NL_CB_CUSTOM,AssoDevInfo_callback,&info);
+    nl_recvmsgs(nl.socket, nl.cb);
+    nlmsg_free(msg);
+    nl_cb_put(nl.cb);
+    nlfree(&nl);
+
+    output_struct->wifi_devAssociatedDeviceAuthentiationState = (wifi_device_t*)info.wifi_devAssociatedDeviceAuthentiationState;
+    output_struct->wifi_devRxRate = (wifi_device_t*)info.wifi_devRxRate;
+    output_struct->wifi_devTxRate = (wifi_device_t*)info.wifi_devTxRate;
+    output_struct->wifi_devSignalStrength = (wifi_device_t*)info.wifi_devSignalStrength;
+    memcpy(&output_struct->wifi_devMacAddress,&info.wifi_devMacAddress,sizeof(wifi_device_t));
+    return RETURN_OK;
+#else
+    //iw utility to retrieve station information
+    FILE *file = NULL;
+    char if_name[10] = {'\0'};
+    char pipeCmd[256] = {'\0'};
+    char line[256];
+    int count,device = 0;
+
+    snprintf(if_name,sizeof(if_name),"wlan%d",apIndex);
+
+    sprintf(pipeCmd, "iw dev %s station dump | grep %s | wc -l", if_name, if_name);
+    file = popen(pipeCmd, "r");
+    fgets(line, sizeof line, file);
+    device = atoi(line);
+
+    if(device == 0)
+        return RETURN_ERR; //No devices are connected
+
+    sprintf(pipeCmd,"iw dev %s station dump > /tmp/AssociatedDevice_Stats.txt", if_name);
+    system(pipeCmd);
+
+    system("cat /tmp/AssociatedDevice_Stats.txt | grep 'signal avg' | cut -d ' ' -f2 | cut -d ':' -f2 | cut -f 2 | tr -s '\n' > /tmp/wifi_signalstrength.txt");
+
+    system("cat /tmp/AssociatedDevice_Stats.txt | grep Station | cut -d ' ' -f 2  > /tmp/wifi_AssoMac.txt");
+
+    system("cat /tmp/AssociatedDevice_Stats.txt | grep 'tx bitrate' | cut -d ' ' -f2 | cut -d ':' -f2 |  cut -f 2 | tr -s '\n' | cut -d '.' -f1 > /tmp/wifi_txrate.txt");
+
+    system("cat /tmp/AssociatedDevice_Stats.txt | grep 'rx bitrate' | cut -d ' ' -f2 | cut -d ':' -f2 |  cut -f 2 | tr -s '\n' | cut -d '.' -f1 > /tmp/wifi_rxrate.txt");
+
+    //devIndex starts from 1, ++count
+    file = fopen("/tmp/wifi_signalstrength.txt", "r");
+    while (fgets(line, sizeof line, file) != NULL)
+    {
+        if (++count == devIndex)
+        {
+           output_struct->wifi_devSignalStrength = atoi(line);
+           fclose(file);
+           break;
+        }
+    }
+
+    file = fopen("/tmp/wifi_AssoMac.txt", "r");
+    count = 0;
+    while (fgets(line, sizeof line, file) != NULL)
+    {
+        if (++count == devIndex)
+        {
+            sscanf(line, "%02x:%02x:%02x:%02x:%02x:%02x",&output_struct->wifi_devMacAddress[0],&output_struct->wifi_devMacAddress[1],&output_struct->wifi_devMacAddress[2],&output_struct->wifi_devMacAddress[3],&output_struct->wifi_devMacAddress[4],&output_struct->wifi_devMacAddress[5]);
+            fclose(file);
+            break;
+        }
+    }
+
+    file = fopen("/tmp/wifi_txrate.txt", "r");
+    count = 0;
+    while (fgets(line, sizeof line, file) != NULL)
+    {
+        if (++count == devIndex)
+        {
+            output_struct->wifi_devTxRate = atoi(line);
+            fclose(file);
+            break;
+        }
+    }
+
+    file = fopen("/tmp/wifi_rxrate.txt", "r");
+    count = 0;
+    while (fgets(line, sizeof line, file) != NULL)
+    {
+        if (++count == devIndex)
+        {
+            output_struct->wifi_devRxRate = atoi(line);
+            fclose(file);
+            break;
+        }
+    }
+
+    output_struct->wifi_devAssociatedDeviceAuthentiationState = 1;
+
+    return RETURN_OK;
+#endif
 }
 
 INT wifi_kickAssociatedDevice(INT apIndex, wifi_device_t *device)
@@ -6453,91 +6741,6 @@ INT wifi_delApAclDevices(INT apINdex)
 }
 
 #ifdef HAL_NETLINK_IMPL
-static int mac_addr_aton(unsigned char *mac_addr, char *arg)
-{
-    unsigned int mac_addr_int[6]={};
-    sscanf(arg, "%x:%x:%x:%x:%x:%x", mac_addr_int+0, mac_addr_int+1, mac_addr_int+2, mac_addr_int+3, mac_addr_int+4, mac_addr_int+5);
-    mac_addr[0] = mac_addr_int[0];
-    mac_addr[1] = mac_addr_int[1];
-    mac_addr[2] = mac_addr_int[2];
-    mac_addr[3] = mac_addr_int[3];
-    mac_addr[4] = mac_addr_int[4];
-    mac_addr[5] = mac_addr_int[5];
-    return 0;
-}
-
-static void mac_addr_ntoa(char *mac_addr, unsigned char *arg)
-{
-    unsigned int mac_addr_int[6]={};
-    mac_addr_int[0] = arg[0];
-    mac_addr_int[1] = arg[1];
-    mac_addr_int[2] = arg[2];
-    mac_addr_int[3] = arg[3];
-    mac_addr_int[4] = arg[4];
-    mac_addr_int[5] = arg[5];
-    snprintf(mac_addr, 20, "%02x:%02x:%02x:%02x:%02x:%02x", mac_addr_int[0], mac_addr_int[1],mac_addr_int[2],mac_addr_int[3],mac_addr_int[4],mac_addr_int[5]);
-    return;
-}
-
-static int ieee80211_frequency_to_channel(int freq)
-{
-    if (freq == 2484)
-        return 14;
-    else if (freq < 2484)
-        return (freq - 2407) / 5;
-    else if (freq >= 4910 && freq <= 4980)
-        return (freq - 4000) / 5;
-    else if (freq <= 45000)
-        return (freq - 5000) / 5;
-    else if (freq >= 58320 && freq <= 64800)
-        return (freq - 56160) / 2160;
-    else
-        return 0;
-}
-
-static int initSock80211(Netlink* nl) {
-    nl->socket = nl_socket_alloc();
-    if (!nl->socket) {
-    fprintf(stderr, "Failing to allocate the  sock\n");
-    return -ENOMEM;
-    }
-
-    nl_socket_set_buffer_size(nl->socket, 8192, 8192);
-
-    if (genl_connect(nl->socket)) {
-        fprintf(stderr, "Failed to connect\n");
-        nl_close(nl->socket);
-        nl_socket_free(nl->socket);
-        return -ENOLINK;
-    }
-
-    nl->id = genl_ctrl_resolve(nl->socket, "nl80211");
-    if (nl->id< 0) {
-        fprintf(stderr, "interface not found.\n");
-        nl_close(nl->socket);
-        nl_socket_free(nl->socket);
-        return -ENOENT;
-    }
-
-    nl->cb = nl_cb_alloc(NL_CB_DEFAULT);
-    if ((!nl->cb)) {
-    fprintf(stderr, "Failed to allocate netlink callback.\n");
-    nl_close(nl->socket);
-    nl_socket_free(nl->socket);
-    return ENOMEM;
-    }
-
-    return nl->id;
-}
-
-static int nlfree(Netlink *nl)
-{
-    nl_cb_put(nl->cb);
-    nl_close(nl->socket);
-    nl_socket_free(nl->socket);
-    return 0;
-}
-
 static int rxStatsInfo_callback(struct nl_msg *msg, void *arg) {
     struct nlattr *tb[NL80211_ATTR_MAX + 1];
     struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));

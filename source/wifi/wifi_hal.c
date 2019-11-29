@@ -226,26 +226,6 @@ static BOOL pub_flag = TRUE;
 static BOOL Radio_flag = TRUE;
 //wifi_setApBeaconRate(1, beaconRate);
 
-typedef enum {
-    WIFI_EVENT_CHANNELS_CHANGED,
-    WIFI_EVENT_DFS_RADAR_DETECTED
-} wifi_chan_eventType_t;
-
-typedef enum {
-    CHAN_STATE_AVAILABLE,
-    CHAN_STATE_DFS_NOP_FINISHED,
-    CHAN_STATE_DFS_NOP_START,
-    CHAN_STATE_DFS_CAC_START,
-    CHAN_STATE_DFS_CAC_COMPLETED
-} wifi_channelState_t;
-
-typedef struct _wifi_channelMap_t {
-    INT ch_number;
-    wifi_channelState_t ch_state;
-} wifi_channelMap_t;
-
-typedef void (*wifi_chan_eventCB_t)(UINT radioIndex, wifi_chan_eventType_t event, UCHAR channel);
-
 struct params
 {
     char * name;
@@ -7287,13 +7267,15 @@ INT wifi_setRMBeaconRequest(UINT apIndex, CHAR *peer, wifi_BeaconRequest_t *in_r
     return RETURN_ERR;
 }
 
-INT wifi_getRadioChannels(INT radioIndex, wifi_channelMap_t *outputMap, INT outputMapSize)
+//INT wifi_getRadioChannels(INT radioIndex, wifi_channelMap_t *outputMap, INT outputMapSize)
+INT wifi_getRadioChannels(INT radioIndex, void *outputMap, INT outputMapSize)
 {
     // TODO Implement me!
     return RETURN_ERR;
 }
 
-INT wifi_chan_eventRegister(wifi_chan_eventCB_t eventCb)
+//INT wifi_chan_eventRegister(wifi_chan_eventCB_t eventCb)
+INT wifi_chan_eventRegister(void *eventCb)
 {
     // TODO Implement me!
     return RETURN_ERR;

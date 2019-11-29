@@ -77,6 +77,28 @@
 
 #define BW_FNAME "/nvram/bw_file.txt"
 
+#define PS_MAX_TID 17
+
+static wifi_radioQueueType_t _tid_ac_index_get[PS_MAX_TID] = {
+    WIFI_RADIO_QUEUE_TYPE_BE,      /* 0 */
+    WIFI_RADIO_QUEUE_TYPE_BK,      /* 1 */
+    WIFI_RADIO_QUEUE_TYPE_BK,      /* 2 */
+    WIFI_RADIO_QUEUE_TYPE_BE,      /* 3 */
+    WIFI_RADIO_QUEUE_TYPE_VI,      /* 4 */
+    WIFI_RADIO_QUEUE_TYPE_VI,      /* 5 */
+    WIFI_RADIO_QUEUE_TYPE_VO,      /* 6 */
+    WIFI_RADIO_QUEUE_TYPE_VO,      /* 7 */
+    WIFI_RADIO_QUEUE_TYPE_BE,      /* 8 */
+    WIFI_RADIO_QUEUE_TYPE_BK,      /* 9 */
+    WIFI_RADIO_QUEUE_TYPE_BK,      /* 10 */
+    WIFI_RADIO_QUEUE_TYPE_BE,      /* 11 */
+    WIFI_RADIO_QUEUE_TYPE_VI,      /* 12 */
+    WIFI_RADIO_QUEUE_TYPE_VI,      /* 13 */
+    WIFI_RADIO_QUEUE_TYPE_VO,      /* 14 */
+    WIFI_RADIO_QUEUE_TYPE_VO,      /* 15 */
+};
+
+
 typedef unsigned long long  u64;
 
 /* Enum to define WiFi Bands */
@@ -6700,10 +6722,175 @@ INT wifi_setRadioStatsEnable(INT radioIndex, BOOL enable)
     return RETURN_ERR;
 }
 
+#ifdef HAL_NETLINK_IMPL
+static int tidStats_callback(struct nl_msg *msg, void *arg) {
+    struct nlattr *tb[NL80211_ATTR_MAX + 1];
+    struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
+    struct nlattr *sinfo[NL80211_STA_INFO_MAX + 1];
+    struct nlattr *stats_info[NL80211_TID_STATS_MAX + 1],*tidattr;
+    int rem , tid_index = 0;
+
+    wifi_associated_dev_tid_stats_t *out = (wifi_associated_dev_tid_stats_t*)arg;
+    wifi_associated_dev_tid_entry_t *stats_entry;
+
+    static struct nla_policy stats_policy[NL80211_STA_INFO_MAX + 1] = {
+                 [NL80211_STA_INFO_TID_STATS] = { .type = NLA_NESTED },
+    };
+    static struct nla_policy tid_policy[NL80211_TID_STATS_MAX + 1] = {
+                 [NL80211_TID_STATS_TX_MSDU] = { .type = NLA_U64 },
+    };
+
+    nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+                  genlmsg_attrlen(gnlh, 0), NULL);
+
+
+    if (!tb[NL80211_ATTR_STA_INFO]) {
+        fprintf(stderr, "station stats missing!\n");
+        return NL_SKIP;
+    }
+
+    if (nla_parse_nested(sinfo, NL80211_STA_INFO_MAX,
+                             tb[NL80211_ATTR_STA_INFO],
+                             stats_policy)) {
+        fprintf(stderr, "failed to parse nested attributes!\n");
+        return NL_SKIP;
+    }
+
+    nla_for_each_nested(tidattr, sinfo[NL80211_STA_INFO_TID_STATS], rem)
+    {
+        stats_entry = &out->tid_array[tid_index];
+
+        stats_entry->tid = tid_index;
+        stats_entry->ac = _tid_ac_index_get[tid_index];
+
+        if(sinfo[NL80211_STA_INFO_TID_STATS])
+        {
+            if(nla_parse_nested(stats_info, NL80211_TID_STATS_MAX,tidattr, tid_policy)) {
+                printf("failed to parse nested stats attributes!");
+                return;
+            }
+        }
+
+        if(stats_info[NL80211_TID_STATS_TX_MSDU])
+            stats_entry->num_msdus = (unsigned long long)nla_get_u64(stats_info[NL80211_TID_STATS_TX_MSDU]);
+
+            tid_index++;
+            printf("all vals are %d , %d , %lld, \n",stats_entry->tid, stats_entry->ac , stats_entry->num_msdus);
+    }
+    //ToDo: sum_time_ms, ewma_time_ms
+
+    return NL_SKIP;
+}
+#endif
+
 INT wifi_getApAssociatedDeviceTidStatsResult(INT radioIndex,  mac_address_t *clientMacAddress, wifi_associated_dev_tid_stats_t *tid_stats,  ULLONG *handle)
 {
-    // TODO Implement me!
-    return RETURN_ERR;
+#ifdef HAL_NETLINK_IMPL
+   Netlink nl;
+   char  if_name[10];
+   char mac_addr[MAC_ALEN];
+
+   snprintf(if_name,sizeof(if_name),"wlan%d",radioIndex);
+
+   nl.id = initNl80211(&nl);
+
+
+   if (nl.id < 0) {
+       fprintf(stderr, "Error initializing netlink \n");
+       return -1;
+   }
+
+   struct nl_msg* msg = nlmsg_alloc();
+
+   if (!msg) {
+       fprintf(stderr, "Failed to allocate netlink message.\n");
+       nlfree(&nl);
+       return -2;
+   }
+
+   genlmsg_put(msg,
+              NL_AUTO_PORT,
+              NL_AUTO_SEQ,
+              nl.id,
+              0,
+              0,
+              NL80211_CMD_GET_STATION,
+              0);
+
+   if(mac_addr_aton(mac_addr, clientMacAddress)) {
+       printf("invalid mac address\n");
+       return 0;
+   }
+
+   nla_put(msg, NL80211_ATTR_MAC, MAC_ALEN, mac_addr);
+   nla_put_u32(msg, NL80211_ATTR_IFINDEX, if_nametoindex(if_name));
+   nl_cb_set(nl.cb,NL_CB_VALID,NL_CB_CUSTOM,tidStats_callback,tid_stats);
+   nl_send_auto(nl.socket, msg);
+   nl_recvmsgs(nl.socket, nl.cb);
+   nlmsg_free(msg);
+   nl_cb_put(nl.cb);
+   nlfree(&nl);
+   return RETURN_OK;
+#else
+//iw implementation
+#define TID_STATS_FILE "/tmp/tid_stats_file.txt"
+#define TOTAL_MAX_LINES 50
+
+    char buf[256] = {'\0'}; /* or other suitable maximum line size */
+    char if_name[10]= "wlan0";
+    FILE *fp=NULL;
+    char pipeCmd[1024]= {'\0'};
+    int lines,tid_index=0;
+    char mac_addr[20] = {'\0'};
+
+    wifi_associated_dev_tid_entry_t *stats_entry;
+
+    snprintf(if_name,sizeof(if_name),"wlan%d",radioIndex);
+
+    strcpy(mac_addr,clientMacAddress);
+
+    snprintf(pipeCmd,sizeof(pipeCmd),"iw dev %s station dump -v > "TID_STATS_FILE,if_name);
+    fp= popen(pipeCmd,"r");
+
+    if(fp == NULL)
+        return RETURN_ERR;
+
+    snprintf(pipeCmd,sizeof(pipeCmd),"grep -n 'Station' "TID_STATS_FILE " | cut -d ':' -f1  | head -2 | tail -1");
+    fp=popen(pipeCmd,"r");
+
+    if(fp == NULL)
+        return RETURN_ERR;
+    else if(fgets(buf,sizeof(buf),fp) != NULL)
+        lines=atoi(buf);
+    else
+        return RETURN_ERR; // No devices are connected
+
+    if(lines == 1)
+        lines = TOTAL_MAX_LINES; //only one client is connected , considering next MAX lines of iw output
+
+
+    for(tid_index=0; tid_index<=16; tid_index++)
+    {
+        stats_entry = &tid_stats->tid_array[tid_index];
+        stats_entry->tid = tid_index;
+
+        snprintf(pipeCmd, sizeof(pipeCmd),"cat "TID_STATS_FILE" | awk '/%s/ {for(i=0; i<=%d; i++) {getline; print}}'  |  grep -F -A%d 'MSDU'  | awk '{print $3}' | tail -1",mac_addr,lines,tid_index+2);
+
+        fp=popen(pipeCmd,"r");
+
+        if(fp ==NULL)
+            return RETURN_ERR;
+
+        else if(fgets(buf,sizeof(buf),fp) != NULL)
+            stats_entry->num_msdus = atol(buf);
+
+        stats_entry->ac = _tid_ac_index_get[tid_index];
+//      TODO:
+//      ULLONG ewma_time_ms;    <! Moving average value based on last couple of transmitted msdus
+//      ULLONG sum_time_ms; <! Delta of cumulative msdus times over interval
+    }
+    return RETURN_OK;
+#endif
 }
 
 

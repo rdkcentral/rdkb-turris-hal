@@ -28,3 +28,8 @@ lib_LTLIBRARIES = libhal_wifi.la
 libhal_wifi_la_CPPFLAGS = -I$(top_srcdir)/./include $(CPPFLAGS)
 libhal_wifi_la_SOURCES = wifi_hal.c
 libhal_wifi_la_LDFLAGS =
+
+#wifihal test binary
+bin_PROGRAMS = wifihal
+wifihal_CPPFLAGS = -I$(top_srcdir)/include $(CPPFLAGS)
+wifihal_SOURCES = wifi_hal.c

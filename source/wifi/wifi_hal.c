@@ -18,7 +18,6 @@
 */
 
 #define HAL_NETLINK_IMPL
-#define WIFI_HAL_TEST
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -3167,7 +3166,7 @@ INT wifi_getAssociatedDeviceDetail(INT apIndex, INT devIndex, wifi_device_t *out
 {
 #ifdef HAL_NETLINK_IMPL
     Netlink nl;
-    char  if_name[10];
+    char if_name[10];
 
     wifi_device_info_t info;
     info.wifi_devIndex = devIndex;
@@ -7467,7 +7466,7 @@ INT wifi_setRMBeaconRequest(UINT apIndex, CHAR *peer, wifi_BeaconRequest_t *in_r
     return RETURN_ERR;
 }*/
 
-#ifdef WIFI_HAL_TEST
+#ifdef _WIFI_HAL_TEST_
 int main(int argc,char **argv)
 {
         WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);

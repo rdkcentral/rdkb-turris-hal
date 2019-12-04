@@ -25,11 +25,11 @@ ACLOCAL_AMFLAGS = -I m4
 hardware_platform = armv7ahf-neon-rdk-linux-musleabi
 
 lib_LTLIBRARIES = libhal_wifi.la
-libhal_wifi_la_CPPFLAGS = -I$(top_srcdir)/./include $(CPPFLAGS)
+libhal_wifi_la_CPPFLAGS = -I$(top_srcdir)/include $(CPPFLAGS)
 libhal_wifi_la_SOURCES = wifi_hal.c
 libhal_wifi_la_LDFLAGS =
 
 #wifihal test binary
 bin_PROGRAMS = wifihal
-wifihal_CPPFLAGS = -I$(top_srcdir)/include $(CPPFLAGS)
+wifihal_CPPFLAGS = -I$(top_srcdir)/include $(CPPFLAGS) -D_WIFI_HAL_TEST_
 wifihal_SOURCES = wifi_hal.c

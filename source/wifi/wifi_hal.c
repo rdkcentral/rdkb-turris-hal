@@ -403,6 +403,7 @@ void wifi_RestartPrivateWifi_2G()
 int _syscmd(char *cmd, char *retBuf, int retBufSize)
 {
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+    wifi_dbg_printf("\n_cmd=%s\n",cmd);
     FILE *f;
     char *ptr = retBuf;
     int bufSize=retBufSize, bufbytes=0, readbytes=0;
@@ -1469,10 +1470,14 @@ INT wifi_getRadioStandard(INT radioIndex, CHAR *output_string, BOOL *gOnly, BOOL
 
     if ((NULL == output_string) && (NULL == gOnly) && (NULL == nOnly) && (NULL == acOnly)) 
         return RETURN_ERR;
-    
+
+    wifi_dbg_printf("\nwifi_getRadioStandard radioIndex=%d\n",radioIndex);
+
     memset(output_string,'\0',4);
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex);
     wifi_hostapdRead(config_file,"hw_mode",output_string,64);
+
+    wifi_dbg_printf("\nwifi_getRadioStandard after wifi_hostapdRead\n");
 
     wifi_dbg_printf("\noutput_string=%s\n",output_string);
     if (NULL == output_string) 

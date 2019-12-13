@@ -403,7 +403,7 @@ void wifi_RestartPrivateWifi_2G()
 int _syscmd(char *cmd, char *retBuf, int retBufSize)
 {
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    wifi_dbg_printf("\n_cmd=%s\n",cmd);
+    
     FILE *f;
     char *ptr = retBuf;
     int bufSize=retBufSize, bufbytes=0, readbytes=0;

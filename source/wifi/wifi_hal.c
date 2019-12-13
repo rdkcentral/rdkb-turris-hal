@@ -6930,6 +6930,15 @@ INT wifi_delApAclDevices(INT apINdex)
     return RETURN_ERR;
 }
 
+//Code here, in rxStatsInfo_callback, txStatsInfo_callback and in chanSurveyInfo_callback originates from:
+/*
+Copyright (c) 2007, 2008	Johannes Berg
+Copyright (c) 2007		Andy Lutomirski
+Copyright (c) 2007		Mike Kershaw
+Copyright (c) 2008-2009		Luis R. Rodriguez
+Licensed under the ISC license
+*/
+
 #ifdef HAL_NETLINK_IMPL
 static int rxStatsInfo_callback(struct nl_msg *msg, void *arg) {
     struct nlattr *tb[NL80211_ATTR_MAX + 1];

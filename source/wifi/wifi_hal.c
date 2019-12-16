@@ -1471,7 +1471,7 @@ INT wifi_getRadioStandard(INT radioIndex, CHAR *output_string, BOOL *gOnly, BOOL
     if ((NULL == output_string) && (NULL == gOnly) && (NULL == nOnly) && (NULL == acOnly)) 
         return RETURN_ERR;
 
-    wifi_dbg_printf("\nwifi_getRadioStandard radioIndex=%d\n",radioIndex);
+    wifi_dbg_printf("\nwifi_getRadioStandard debug 1\n");
 
     memset(output_string,'\0',4);
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex);

@@ -1501,13 +1501,13 @@ INT wifi_getRadioStandard(INT radioIndex, CHAR *output_string, BOOL *gOnly, BOOL
     }
     else if(strcmp(output_string,"ac")==0)
     {
-        wifi_dbg_printf("\nReturning from getRadioStandard\n");
+        wifi_dbg_printf("\nac\n");
         *gOnly=FALSE;
         *nOnly=FALSE;
         *acOnly=TRUE;
     }
     else
-        wifi_dbg_printf("\nInvalid Mode\n");
+        wifi_dbg_printf("\nInvalid Mode %s\n", output_string);
 
     //for a,n mode
     if(radioIndex == 1)

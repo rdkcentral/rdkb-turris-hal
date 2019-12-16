@@ -4134,6 +4134,45 @@ INT wifi_kickApAclAssociatedDevices(INT apIndex, BOOL enable)
     return RETURN_OK;
 }
 
+INT wifi_setPreferPrivateConnection(BOOL enable)
+{
+        fprintf(stderr,"%s Value of %d",__FUNCTION__,enable);
+        char interface_name[100] = {0},ssid_cur_value[50] = {0};
+        char buf[1024] = {0};
+        if(enable == TRUE)
+        {
+                GetInterfaceName(interface_name,"/nvram/hostapd4.conf");
+                sprintf(buf,"ifconfig %s down" ,interface_name);
+                system(buf);
+                memset(buf,0,sizeof(buf));
+                GetInterfaceName(interface_name,"/nvram/hostapd5.conf");
+                sprintf(buf,"ifconfig %s down" ,interface_name);
+                system(buf);
+        }
+        else
+        {
+                File_Reading("cat /tmp/Get5gssidEnable.txt",&ssid_cur_value);
+                if(strcmp(ssid_cur_value,"1") == 0)
+                {
+                        wifi_RestartHostapd_5G(1);
+                        restarthostapd_all("/nvram/hostapd1.conf");
+                }
+                memset(ssid_cur_value,0,sizeof(ssid_cur_value));
+                File_Reading("cat /tmp/GetPub2gssidEnable.txt",&ssid_cur_value);
+                if(strcmp(ssid_cur_value,"1") == 0)
+                {
+                        wifi_RestartHostapd_2G();
+                        restarthostapd_all("/nvram/hostapd4.conf");
+                }
+                memset(ssid_cur_value,0,sizeof(ssid_cur_value));
+                File_Reading("cat /tmp/GetPub5gssidEnable.txt",&ssid_cur_value);
+                if(strcmp(ssid_cur_value,"1") == 0)
+                        restarthostapd_all("/nvram/hostapd5.conf");
+        }
+        return RETURN_OK;
+}
+
+
 // sets the mac address filter control mode.  0 == filter disabled, 1 == filter as whitelist, 2 == filter as blacklist
 INT wifi_setApMacAddressControlMode(INT apIndex, INT filterMode)
 {

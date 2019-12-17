@@ -6124,7 +6124,7 @@ INT wifi_getRadioAutoChannelEnable(INT radioIndex, BOOL *output_bool)
     char config_file[MAX_BUF_SIZE] = {0};
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex);
-    wifi_hostapdRead(radioIndex,"channel",output,64);
+    wifi_hostapdRead(config_file,"channel",output,64);
 
     if(strcmp(output,"0")==0)
         *output_bool = TRUE;
@@ -6654,7 +6654,7 @@ INT wifi_getApIsolationEnable(INT apIndex, BOOL *output)
     char config_file[MAX_BUF_SIZE] = {0};
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(apIndex,"ap_isolate",output_val,64);
+    wifi_hostapdRead(config_file,"ap_isolate",output_val,64);
 
     if( strcmp(output_val,"1") == 0 )
         *output=TRUE;

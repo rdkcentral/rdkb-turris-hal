@@ -2747,7 +2747,7 @@ INT wifi_getSSIDName(INT apIndex, CHAR *output)
         return RETURN_ERR;
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(config_file,"ssid",output,64);
+    wifi_hostapdRead(config_file,"ssid",output,32);
     wifi_dbg_printf("\n[%s]: SSID Name is : %s",__func__,output); 
     if(output==NULL)
         return RETURN_ERR;
@@ -2787,7 +2787,7 @@ INT wifi_getBaseBSSID(INT ssidIndex, CHAR *output_string)	//RDKB
         return RETURN_ERR;
 
     sprintf(cmd, "iw dev %s%d info |grep addr | awk '{printf $2}'", AP_PREFIX, ssidIndex);
-    _syscmd(cmd, output_string, 64);
+    _syscmd(cmd, output_string, 32);
 
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
     return RETURN_OK;

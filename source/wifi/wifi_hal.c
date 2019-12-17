@@ -1506,10 +1506,18 @@ INT wifi_getRadioStandard(INT radioIndex, CHAR *output_string, BOOL *gOnly, BOOL
         *nOnly=FALSE;
         *acOnly=TRUE;
     }
+    else if(strcmp(output_string,"a")==0)
+    {
+        wifi_dbg_printf("\na\n");
+        *gOnly=FALSE;
+        *nOnly=FALSE;
+        *acOnly=FALSE;
+    }
     else
         wifi_dbg_printf("\nInvalid Mode %s\n", output_string);
 
     //for a,n mode
+#if 0	
     if(radioIndex == 1)
     {
         sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex);
@@ -1521,6 +1529,7 @@ INT wifi_getRadioStandard(INT radioIndex, CHAR *output_string, BOOL *gOnly, BOOL
              *nOnly=FALSE;
         }
     }
+#endif
     wifi_dbg_printf("\nReturning from getRadioStandard\n");
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
     return RETURN_OK;

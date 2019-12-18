@@ -403,7 +403,6 @@ void wifi_RestartPrivateWifi_2G()
 int _syscmd(char *cmd, char *retBuf, int retBufSize)
 {
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    //wifi_dbg_printf("\n_cmd: %s\n",cmd);
     FILE *f;
     char *ptr = retBuf;
     int bufSize=retBufSize, bufbytes=0, readbytes=0;
@@ -1470,14 +1469,10 @@ INT wifi_getRadioStandard(INT radioIndex, CHAR *output_string, BOOL *gOnly, BOOL
 
     if ((NULL == output_string) && (NULL == gOnly) && (NULL == nOnly) && (NULL == acOnly)) 
         return RETURN_ERR;
-
-    wifi_dbg_printf("\nwifi_getRadioStandard debug 1\n");
-
+    
     memset(output_string,'\0',4);
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex);
     wifi_hostapdRead(config_file,"hw_mode",output_string,64);
-
-    wifi_dbg_printf("\nwifi_getRadioStandard after wifi_hostapdRead\n");
 
     wifi_dbg_printf("\noutput_string=%s\n",output_string);
     if (NULL == output_string) 
@@ -1506,6 +1501,7 @@ INT wifi_getRadioStandard(INT radioIndex, CHAR *output_string, BOOL *gOnly, BOOL
         *nOnly=FALSE;
         *acOnly=TRUE;
     }
+	/* hostapd-5G.conf has "a" as hw_mode */
     else if(strcmp(output_string,"a")==0)
     {
         wifi_dbg_printf("\na\n");
@@ -1516,12 +1512,11 @@ INT wifi_getRadioStandard(INT radioIndex, CHAR *output_string, BOOL *gOnly, BOOL
     else
         wifi_dbg_printf("\nInvalid Mode %s\n", output_string);
 
-    //for a,n mode
-#if 0	
+    //for a,n mode	
     if(radioIndex == 1)
     {
         sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex);
-        wifi_hostapdRead(config_file,"hw_mode",string,64);
+        wifi_hostapdRead(config_file,"ieee80211n",string,50);
         wifi_dbg_printf("\noutput_string=%s\n",string);
         if(strcmp(string,"1")==0)
         {
@@ -1529,7 +1524,6 @@ INT wifi_getRadioStandard(INT radioIndex, CHAR *output_string, BOOL *gOnly, BOOL
              *nOnly=FALSE;
         }
     }
-#endif
     wifi_dbg_printf("\nReturning from getRadioStandard\n");
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
     return RETURN_OK;

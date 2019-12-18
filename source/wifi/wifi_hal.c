@@ -3724,7 +3724,7 @@ INT wifi_getApWpaEncryptionMode(INT apIndex, CHAR *output_string)
 
     memset(output_string,'\0',32);
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(apIndex,params.name,output_string,32);
+    wifi_hostapdRead(config_file,params.name,output_string,32);
     wifi_dbg_printf("\n%s output_string=%s",__func__,output_string);
 
     if(strcmp(output_string,"TKIP") == 0)

@@ -3716,11 +3716,11 @@ INT wifi_getApWpaEncryptionMode(INT apIndex, CHAR *output_string)
     }
 
     if((strcmp(buf,"3")==0))
-        strcpy(params.name,"rsn_pairwise");
+        params.name = "rsn_pairwise";
     else if((strcmp(buf,"2")==0))
-        strcpy(params.name,"rsn_pairwise");
+        params.name = "rsn_pairwise";
     else if((strcmp(buf,"1")==0))
-        strcpy(params.name,"wpa_pairwise");
+        params.name = "wpa_pairwise";
 
     memset(output_string,'\0',32);
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);

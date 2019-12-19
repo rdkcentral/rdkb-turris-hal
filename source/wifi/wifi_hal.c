@@ -3819,12 +3819,12 @@ INT wifi_setApBasicAuthenticationMode(INT apIndex, CHAR *authMode)
         return RETURN_ERR;
 
     wifi_dbg_printf("\n%s AuthMode=%s",__func__,authMode);
-    strncpy(params.name,"wpa_key_mgmt",strlen("wpa_key_mgmt"));
+    params.name = "wpa_key_mgmt";
 
     if((strcmp(authMode,"PSKAuthentication") == 0) || (strcmp(authMode,"SharedAuthentication") == 0))
-        strcpy(params.value,"WPA-PSK");
+        params.value = "WPA-PSK";
     else if(strcmp(authMode,"EAPAuthentication") == 0)
-        strcpy(params.value,"WPA-EAP");
+        params.value = "WPA-EAP";
     else if(strcmp(authMode,"None") == 0) //Donot change in case the authMode is None
         return RETURN_OK;			  //This is taken careof in beaconType
 

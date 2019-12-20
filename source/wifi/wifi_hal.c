@@ -1470,9 +1470,8 @@ INT wifi_getRadioStandard(INT radioIndex, CHAR *output_string, BOOL *gOnly, BOOL
     if ((NULL == output_string) && (NULL == gOnly) && (NULL == nOnly) && (NULL == acOnly)) 
         return RETURN_ERR;
     
-    memset(output_string,'\0',4);
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex);
-    wifi_hostapdRead(config_file,"hw_mode",output_string,64);
+    wifi_hostapdRead(config_file,"hw_mode",output_string,32);
 
     wifi_dbg_printf("\noutput_string=%s\n",output_string);
     if (NULL == output_string) 
@@ -1496,26 +1495,33 @@ INT wifi_getRadioStandard(INT radioIndex, CHAR *output_string, BOOL *gOnly, BOOL
     }
     else if(strcmp(output_string,"ac")==0)
     {
-        wifi_dbg_printf("\nReturning from getRadioStandard\n");
+        wifi_dbg_printf("\nac\n");
         *gOnly=FALSE;
         *nOnly=FALSE;
         *acOnly=TRUE;
     }
+	/* hostapd-5G.conf has "a" as hw_mode */
+    else if(strcmp(output_string,"a")==0)
+    {
+        wifi_dbg_printf("\na\n");
+        *gOnly=FALSE;
+        *nOnly=FALSE;
+        *acOnly=FALSE;
+    }
     else
-        wifi_dbg_printf("\nInvalid Mode\n");
+        wifi_dbg_printf("\nInvalid Mode %s\n", output_string);
 
     //for a,n mode
     if(radioIndex == 1)
     {
-        sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex);
-        wifi_hostapdRead(config_file,"hw_mode",string,64);
-        wifi_dbg_printf("\noutput_string=%s\n",string);
+        wifi_hostapdRead(config_file,"ieee80211n",string,50);
         if(strcmp(string,"1")==0)
         {
-             strcpy(output_string,"n");
+             strncpy(output_string, "n", 1);
              *nOnly=FALSE;
         }
     }
+
     wifi_dbg_printf("\nReturning from getRadioStandard\n");
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
     return RETURN_OK;
@@ -2733,7 +2739,7 @@ INT wifi_getSSIDName(INT apIndex, CHAR *output)
         return RETURN_ERR;
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(config_file,"ssid",output,64);
+    wifi_hostapdRead(config_file,"ssid",output,32);
     wifi_dbg_printf("\n[%s]: SSID Name is : %s",__func__,output); 
     if(output==NULL)
         return RETURN_ERR;
@@ -2773,7 +2779,7 @@ INT wifi_getBaseBSSID(INT ssidIndex, CHAR *output_string)	//RDKB
         return RETURN_ERR;
 
     sprintf(cmd, "iw dev %s%d info |grep addr | awk '{printf $2}'", AP_PREFIX, ssidIndex);
-    _syscmd(cmd, output_string, 64);
+    _syscmd(cmd, output_string, 32);
 
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
     return RETURN_OK;
@@ -3702,15 +3708,15 @@ INT wifi_getApWpaEncryptionMode(INT apIndex, CHAR *output_string)
     }
 
     if((strcmp(buf,"3")==0))
-        strcpy(params.name,"rsn_pairwise");
+        params.name = "rsn_pairwise";
     else if((strcmp(buf,"2")==0))
-        strcpy(params.name,"rsn_pairwise");
+        params.name = "rsn_pairwise";
     else if((strcmp(buf,"1")==0))
-        strcpy(params.name,"wpa_pairwise");
+        params.name = "wpa_pairwise";
 
     memset(output_string,'\0',32);
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(apIndex,params.name,output_string,32);
+    wifi_hostapdRead(config_file,params.name,output_string,32);
     wifi_dbg_printf("\n%s output_string=%s",__func__,output_string);
 
     if(strcmp(output_string,"TKIP") == 0)
@@ -3813,12 +3819,12 @@ INT wifi_setApBasicAuthenticationMode(INT apIndex, CHAR *authMode)
         return RETURN_ERR;
 
     wifi_dbg_printf("\n%s AuthMode=%s",__func__,authMode);
-    strncpy(params.name,"wpa_key_mgmt",strlen("wpa_key_mgmt"));
+    params.name = "wpa_key_mgmt";
 
     if((strcmp(authMode,"PSKAuthentication") == 0) || (strcmp(authMode,"SharedAuthentication") == 0))
-        strcpy(params.value,"WPA-PSK");
+        params.value = "WPA-PSK";
     else if(strcmp(authMode,"EAPAuthentication") == 0)
-        strcpy(params.value,"WPA-EAP");
+        params.value = "WPA-EAP";
     else if(strcmp(authMode,"None") == 0) //Donot change in case the authMode is None
         return RETURN_OK;			  //This is taken careof in beaconType
 
@@ -4128,6 +4134,45 @@ INT wifi_kickApAclAssociatedDevices(INT apIndex, BOOL enable)
 
     return RETURN_OK;
 }
+
+INT wifi_setPreferPrivateConnection(BOOL enable)
+{
+        fprintf(stderr,"%s Value of %d",__FUNCTION__,enable);
+        char interface_name[100] = {0},ssid_cur_value[50] = {0};
+        char buf[1024] = {0};
+        if(enable == TRUE)
+        {
+                GetInterfaceName(interface_name,"/nvram/hostapd4.conf");
+                sprintf(buf,"ifconfig %s down" ,interface_name);
+                system(buf);
+                memset(buf,0,sizeof(buf));
+                GetInterfaceName(interface_name,"/nvram/hostapd5.conf");
+                sprintf(buf,"ifconfig %s down" ,interface_name);
+                system(buf);
+        }
+        else
+        {
+                File_Reading("cat /tmp/Get5gssidEnable.txt",&ssid_cur_value);
+                if(strcmp(ssid_cur_value,"1") == 0)
+                {
+                        wifi_RestartHostapd_5G(1);
+                        restarthostapd_all("/nvram/hostapd1.conf");
+                }
+                memset(ssid_cur_value,0,sizeof(ssid_cur_value));
+                File_Reading("cat /tmp/GetPub2gssidEnable.txt",&ssid_cur_value);
+                if(strcmp(ssid_cur_value,"1") == 0)
+                {
+                        wifi_RestartHostapd_2G();
+                        restarthostapd_all("/nvram/hostapd4.conf");
+                }
+                memset(ssid_cur_value,0,sizeof(ssid_cur_value));
+                File_Reading("cat /tmp/GetPub5gssidEnable.txt",&ssid_cur_value);
+                if(strcmp(ssid_cur_value,"1") == 0)
+                        restarthostapd_all("/nvram/hostapd5.conf");
+        }
+        return RETURN_OK;
+}
+
 
 // sets the mac address filter control mode.  0 == filter disabled, 1 == filter as whitelist, 2 == filter as blacklist
 INT wifi_setApMacAddressControlMode(INT apIndex, INT filterMode)
@@ -6071,7 +6116,7 @@ INT wifi_getRadioAutoChannelEnable(INT radioIndex, BOOL *output_bool)
     char config_file[MAX_BUF_SIZE] = {0};
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex);
-    wifi_hostapdRead(radioIndex,"channel",output,64);
+    wifi_hostapdRead(config_file,"channel",output,64);
 
     if(strcmp(output,"0")==0)
         *output_bool = TRUE;
@@ -6601,7 +6646,7 @@ INT wifi_getApIsolationEnable(INT apIndex, BOOL *output)
     char config_file[MAX_BUF_SIZE] = {0};
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(apIndex,"ap_isolate",output_val,64);
+    wifi_hostapdRead(config_file,"ap_isolate",output_val,64);
 
     if( strcmp(output_val,"1") == 0 )
         *output=TRUE;

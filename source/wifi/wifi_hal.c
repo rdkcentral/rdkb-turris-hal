@@ -305,14 +305,6 @@ int GetInterfaceNameFromIdx(int radio_index, char *interface_name)
     return 0;
 }
 
-int GetInterfaceNameFromIdx(int radio_index, char *interface_name)
-{
-    char config_file[MAX_BUF_SIZE] = {0};
-    sprintf(config_file,"%s%d.conf", CONFIG_PREFIX,radio_index);
-    GetInterfaceName(interface_name,config_file);
-    return 0;
-}
-
 INT File_Reading(CHAR *file, char *Value)
 {
 	WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);

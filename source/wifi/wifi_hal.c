@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include "wifi_hal.h"
 
 #ifdef HAL_NETLINK_IMPL
@@ -262,7 +263,7 @@ static int wifi_hostapdRead(char *conf_file, char *param ,char *output, int outp
     ret = _syscmd(cmd,buf,sizeof(buf));
     if ((ret != 0) && (strlen(buf) == 0))
         return -1;
-    strncpy(output,buf,output_size);
+    snprintf(output,sizeof(output),"%s",buf);
     return 0;
 }
 
@@ -287,20 +288,20 @@ static int wifi_hostapdWrite(char *conf_file, struct params *list,int item_count
     }
     return 0;
 }
-
-int GetInterfaceNameFromIdx(int radio_index, char *interface_name)
-{
-    char config_file[MAX_BUF_SIZE] = {0};
-    sprintf(config_file,"%s%d.conf", CONFIG_PREFIX,radio_index);
-    return GetInterfaceName(config_file, interface_name);
-}
-
 //For Getting Current Interface Name from corresponding hostapd configuration
 void GetInterfaceName(char *interface_name, char *conf_file)
 {
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     wifi_hostapdRead(conf_file,"interface",interface_name,IF_NAMESIZE);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
+    return 0;
+}
+
+int GetInterfaceNameFromIdx(int radio_index, char *interface_name)
+{
+    char config_file[MAX_BUF_SIZE] = {0};
+    sprintf(config_file,"%s%d.conf", CONFIG_PREFIX,radio_index);
+    GetInterfaceName(interface_name,config_file);
     return 0;
 }
 
@@ -840,8 +841,8 @@ INT wifi_init()                            //RDKB
     char interface[MAX_BUF_SIZE]={'\0'};
     char bridge_name[MAX_BUF_SIZE]={'\0'};
     INT len=0;
-
-    macfilter_init();
+    //Not intitializing macfilter for Turris-Omnia Platform
+    //macfilter_init();
 
 	/* preparing hostapd configuration*/
 	if(RETURN_ERR == prepare_hostapd_conf())
@@ -2772,17 +2773,22 @@ INT wifi_setSSIDName(INT apIndex, CHAR *ssid_string)
 //Get the BSSID 
 INT wifi_getBaseBSSID(INT ssidIndex, CHAR *output_string)	//RDKB
 {
-    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    char cmd[128]={0};
+    char cmd[MAX_CMD_SIZE]="";
 
     if (NULL == output_string)
         return RETURN_ERR;
 
-    sprintf(cmd, "iw dev %s%d info |grep addr | awk '{printf $2}'", AP_PREFIX, ssidIndex);
-    _syscmd(cmd, output_string, 32);
-
-    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-    return RETURN_OK;
+    if(ssidIndex == 0 || ssidIndex == 1)
+    {
+        snprintf(cmd, sizeof(cmd), "iw dev %s%d info |grep addr | awk '{printf $2}'", AP_PREFIX, ssidIndex);
+        _syscmd(cmd, output_string, 64);
+        return RETURN_OK;
+    }
+    else
+    {
+        strncpy(output_string, "\0", 1);
+        return RETURN_ERR;
+    }
 }
 
 //Get the MAC address associated with this Wifi SSID
@@ -3569,19 +3575,12 @@ INT wifi_deleteAp(INT apIndex)
 // Outputs a 16 byte or less name assocated with the AP.  String buffer must be pre-allocated by the caller
 INT wifi_getApName(INT apIndex, CHAR *output_string)
 {
-	if (NULL == output_string) 
-		return RETURN_ERR;
-	snprintf(output_string, 16, "%s%d", AP_PREFIX, apIndex);
-	/*char HConf_file[MAX_BUF_SIZE] = {'\0'};
-	char IfName[MAX_BUF_SIZE] = {'\0'};
-	char cmd[MAX_CMD_SIZE] = {'\0'};
-	if((apIndex == 0) || (apIndex == 1) || (apIndex == 4) || (apIndex == 5))
-	{
-        sprintf(HConf_file,"%s%d%s","/nvram/hostapd",apIndex,".conf");
-	GetInterfaceName(IfName,HConf_file);
-	strcpy(output_string,IfName);	
-	}*/
-	return RETURN_OK;
+
+    if(NULL == output_string)
+        return RETURN_ERR;
+
+    GetInterfaceNameFromIdx(apIndex,output_string);
+    return RETURN_OK;
 }     
        
 // Outputs the index number in that corresponds to the SSID string
@@ -3706,14 +3705,16 @@ INT wifi_getApWpaEncryptionMode(INT apIndex, CHAR *output_string)
         snprintf(output_string, 32, "None");
         return RETURN_OK;
     }
-
-    if((strcmp(buf,"3")==0))
-        params.name = "rsn_pairwise";
-    else if((strcmp(buf,"2")==0))
-        params.name = "rsn_pairwise";
+    else if((strcmp(buf,"3")==0) || (strcmp(buf,"2")==0))
+    {
+        params.name = malloc(strlen("rsn_pairwise"));
+        strcpy(params.name,"rsn_pairwise");
+    }
     else if((strcmp(buf,"1")==0))
-        params.name = "wpa_pairwise";
-
+    {
+        params.name = malloc(strlen("wpa_pairwise"));
+        strcpy(params.name,"wpa_pairwise");
+    }
     memset(output_string,'\0',32);
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
     wifi_hostapdRead(config_file,params.name,output_string,32);
@@ -7520,6 +7521,14 @@ INT wifi_setRMBeaconRequest(UINT apIndex, CHAR *peer, wifi_BeaconRequest_t *in_r
     return RETURN_ERR;
 }*/
 
+INT wifi_getRadioBandUtilization (INT radioIndex, INT *output_percentage)
+{
+    return RETURN_OK;
+}
+INT wifi_getApAssociatedClientDiagnosticResult(INT apIndex, char *mac_addr, wifi_associated_dev3_t *dev_conn)
+{
+    return RETURN_OK;
+}
 #ifdef _WIFI_HAL_TEST_
 int main(int argc,char **argv)
 {
@@ -7541,6 +7550,37 @@ int main(int argc,char **argv)
     }    
 	
 	index = atoi(argv[2]);
+    if(strstr(argv[1], "wifi_getApName")!=NULL)
+    {
+         char buf[32]= {'\0'};
+         wifi_getApName(index,buf);
+         printf("Ap name is %s \n",buf);
+         return 0;
+    }
+    if(strstr(argv[1], "wifi_getRadioAutoChannelEnable")!=NULL)
+    {
+        bool b = false;
+        bool *output_bool = &b;
+        wifi_getRadioAutoChannelEnable(index,output_bool);
+        printf("Channel enabled = %d \n",b);
+        return 0;
+    }
+    if(strstr(argv[1], "wifi_getApWpaEncryptionMode")!=NULL)
+    {
+        char buf[32]= {'\0'};
+        wifi_getApWpaEncryptionMode(index,buf);
+        printf("encryption enabled = %s\n",buf);
+        return 0;
+    }
+    if(strstr(argv[1], "wifi_getApSsidAdvertisementEnable")!=NULL)
+    {
+        bool b = false;
+        bool *output_bool = &b;
+        wifi_getApSsidAdvertisementEnable(index,output_bool);
+        printf("advertisment enabled =  %d\n",b);
+        return 0;
+    }
+
     if(strstr(argv[1],"wifi_getApAssociatedDeviceTidStatsResult")!=NULL)
     {
         printf("arguments are %s %s %s \n", argv[1],argv[2],argv[3]);

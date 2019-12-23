@@ -263,7 +263,7 @@ static int wifi_hostapdRead(char *conf_file, char *param ,char *output, int outp
     ret = _syscmd(cmd,buf,sizeof(buf));
     if ((ret != 0) && (strlen(buf) == 0))
         return -1;
-    snprintf(output,sizeof(output),"%s",buf);
+    snprintf(output, output_size, "%s", buf);
     return 0;
 }
 
@@ -3689,9 +3689,7 @@ INT wifi_setApRtsThreshold(INT apIndex, UINT threshold)
 INT wifi_getApWpaEncryptionMode(INT apIndex, CHAR *output_string)
 {
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    struct params params;
-    char buf[32];
-    char config_file[MAX_BUF_SIZE] = {0};
+    char *param_name, buf[32], config_file[MAX_BUF_SIZE] = {0};
 
     if(NULL == output_string)
         return RETURN_ERR;
@@ -3706,18 +3704,14 @@ INT wifi_getApWpaEncryptionMode(INT apIndex, CHAR *output_string)
         return RETURN_OK;
     }
     else if((strcmp(buf,"3")==0) || (strcmp(buf,"2")==0))
-    {
-        params.name = malloc(strlen("rsn_pairwise"));
-        strcpy(params.name,"rsn_pairwise");
-    }
+        param_name = "rsn_pairwise";
     else if((strcmp(buf,"1")==0))
-    {
-        params.name = malloc(strlen("wpa_pairwise"));
-        strcpy(params.name,"wpa_pairwise");
-    }
+        param_name = "wpa_pairwise";
+    else
+        return RETURN_ERR;
     memset(output_string,'\0',32);
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(config_file,params.name,output_string,32);
+    wifi_hostapdRead(config_file,param_name,output_string,32);
     wifi_dbg_printf("\n%s output_string=%s",__func__,output_string);
 
     if(strcmp(output_string,"TKIP") == 0)
@@ -7552,10 +7546,10 @@ int main(int argc,char **argv)
 	index = atoi(argv[2]);
     if(strstr(argv[1], "wifi_getApName")!=NULL)
     {
-         char buf[32]= {'\0'};
-         wifi_getApName(index,buf);
-         printf("Ap name is %s \n",buf);
-         return 0;
+        char buf[32]= {'\0'};
+        wifi_getApName(index,buf);
+        printf("Ap name is %s \n",buf);
+        return 0;
     }
     if(strstr(argv[1], "wifi_getRadioAutoChannelEnable")!=NULL)
     {

@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include "wifi_hal.h"
 
 #ifdef HAL_NETLINK_IMPL
@@ -262,7 +263,7 @@ static int wifi_hostapdRead(char *conf_file, char *param ,char *output, int outp
     ret = _syscmd(cmd,buf,sizeof(buf));
     if ((ret != 0) && (strlen(buf) == 0))
         return -1;
-    strncpy(output,buf,output_size);
+    snprintf(output, output_size, "%s", buf);
     return 0;
 }
 
@@ -273,7 +274,7 @@ static int wifi_hostapdWrite(char *conf_file, struct params *list,int item_count
     int ret = 0;
     for(int i=0;i<item_count;i++)
     {
-        wifi_hostapdRead(conf_file, list[i].name, buf,MAX_BUF_SIZE);
+        wifi_hostapdRead(conf_file, list[i].name, buf, sizeof(buf));
         if (strlen(buf) == 0) {
             //Insert
             sprintf(cmd, "echo \"%s=%s\" >> %s", list[i].name, list[i].value, conf_file);
@@ -287,20 +288,20 @@ static int wifi_hostapdWrite(char *conf_file, struct params *list,int item_count
     }
     return 0;
 }
-
-int GetInterfaceNameFromIdx(int radio_index, char *interface_name)
-{
-    char config_file[MAX_BUF_SIZE] = {0};
-    sprintf(config_file,"%s%d.conf", CONFIG_PREFIX,radio_index);
-    return GetInterfaceName(config_file, interface_name);
-}
-
 //For Getting Current Interface Name from corresponding hostapd configuration
 void GetInterfaceName(char *interface_name, char *conf_file)
 {
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     wifi_hostapdRead(conf_file,"interface",interface_name,IF_NAMESIZE);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
+    return 0;
+}
+
+int GetInterfaceNameFromIdx(int radio_index, char *interface_name)
+{
+    char config_file[MAX_BUF_SIZE] = {0};
+    sprintf(config_file,"%s%d.conf", CONFIG_PREFIX,radio_index);
+    GetInterfaceName(interface_name,config_file);
     return 0;
 }
 
@@ -787,7 +788,7 @@ void macfilter_init()
     for(index=0;index<=1;index++)
     {
         sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,index);
-        wifi_hostapdRead(config_file,"interface",iface,64);
+        wifi_hostapdRead(config_file, "interface", iface, sizeof(iface));
         sprintf(buf,"syscfg get %dcountfilter",index);
         _syscmd(buf,count,sizeof(count));
         mac_entry=atoi(count);
@@ -840,8 +841,8 @@ INT wifi_init()                            //RDKB
     char interface[MAX_BUF_SIZE]={'\0'};
     char bridge_name[MAX_BUF_SIZE]={'\0'};
     INT len=0;
-
-    macfilter_init();
+    //Not intitializing macfilter for Turris-Omnia Platform
+    //macfilter_init();
 
 	/* preparing hostapd configuration*/
 	if(RETURN_ERR == prepare_hostapd_conf())
@@ -1514,7 +1515,7 @@ INT wifi_getRadioStandard(INT radioIndex, CHAR *output_string, BOOL *gOnly, BOOL
     //for a,n mode
     if(radioIndex == 1)
     {
-        wifi_hostapdRead(config_file,"ieee80211n",string,50);
+        wifi_hostapdRead(config_file, "ieee80211n", string, sizeof(string));
         if(strcmp(string,"1")==0)
         {
              strncpy(output_string, "n", 1);
@@ -1724,7 +1725,7 @@ INT wifi_storeprevchanval(INT radioIndex)
 	char output[4]={'\0'};
 	char config_file[MAX_BUF_SIZE] = {0};
 	sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex);
-	wifi_hostapdRead(config_file,"channel",output,64);
+	wifi_hostapdRead(config_file, "channel", output, sizeof(output));
 	if(radioIndex == 0)
 		sprintf(buf,"%s%s%s","echo ",output," > /var/prevchanval2G_AutoChannelEnable");
 	else if(radioIndex == 1)
@@ -1960,7 +1961,7 @@ INT wifi_getRadioOperatingChannelBandwidth(INT radioIndex, CHAR *output_string) 
     char config_file[MAX_BUF_SIZE] = {0};
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex);
-    wifi_hostapdRead(config_file,"vht_oper_chwidth",output_buf,64);
+    wifi_hostapdRead(config_file, "vht_oper_chwidth", output_buf, sizeof(output_buf));
     readBandWidth(radioIndex,bw_value);
 
     if (NULL == output_string)
@@ -2753,11 +2754,10 @@ INT wifi_setSSIDName(INT apIndex, CHAR *ssid_string)
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     char str[MAX_BUF_SIZE]={'\0'};
     char cmd[MAX_CMD_SIZE]={'\0'};
-    char *ch;
     struct params params;
     char config_file[MAX_BUF_SIZE] = {0};
 
-    if(NULL == ssid_string)
+    if(NULL == ssid_string || strlen(ssid_string) >= 32 )
         return RETURN_ERR;
 
     params.name = "ssid";
@@ -2772,17 +2772,22 @@ INT wifi_setSSIDName(INT apIndex, CHAR *ssid_string)
 //Get the BSSID 
 INT wifi_getBaseBSSID(INT ssidIndex, CHAR *output_string)	//RDKB
 {
-    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    char cmd[128]={0};
+    char cmd[MAX_CMD_SIZE]="";
 
     if (NULL == output_string)
         return RETURN_ERR;
 
-    sprintf(cmd, "iw dev %s%d info |grep addr | awk '{printf $2}'", AP_PREFIX, ssidIndex);
-    _syscmd(cmd, output_string, 32);
-
-    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-    return RETURN_OK;
+    if(ssidIndex == 0 || ssidIndex == 1)
+    {
+        snprintf(cmd, sizeof(cmd), "iw dev %s%d info |grep addr | awk '{printf $2}'", AP_PREFIX, ssidIndex);
+        _syscmd(cmd, output_string, 64);
+        return RETURN_OK;
+    }
+    else
+    {
+        strncpy(output_string, "\0", 1);
+        return RETURN_ERR;
+    }
 }
 
 //Get the MAC address associated with this Wifi SSID
@@ -3569,19 +3574,12 @@ INT wifi_deleteAp(INT apIndex)
 // Outputs a 16 byte or less name assocated with the AP.  String buffer must be pre-allocated by the caller
 INT wifi_getApName(INT apIndex, CHAR *output_string)
 {
-	if (NULL == output_string) 
-		return RETURN_ERR;
-	snprintf(output_string, 16, "%s%d", AP_PREFIX, apIndex);
-	/*char HConf_file[MAX_BUF_SIZE] = {'\0'};
-	char IfName[MAX_BUF_SIZE] = {'\0'};
-	char cmd[MAX_CMD_SIZE] = {'\0'};
-	if((apIndex == 0) || (apIndex == 1) || (apIndex == 4) || (apIndex == 5))
-	{
-        sprintf(HConf_file,"%s%d%s","/nvram/hostapd",apIndex,".conf");
-	GetInterfaceName(IfName,HConf_file);
-	strcpy(output_string,IfName);	
-	}*/
-	return RETURN_OK;
+
+    if(NULL == output_string)
+        return RETURN_ERR;
+
+    GetInterfaceNameFromIdx(apIndex,output_string);
+    return RETURN_OK;
 }     
        
 // Outputs the index number in that corresponds to the SSID string
@@ -3610,7 +3608,7 @@ INT wifi_getApBeaconType(INT apIndex, CHAR *output_string)
         return RETURN_ERR;
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(config_file, "wpa", buf, 64);
+    wifi_hostapdRead(config_file, "wpa", buf, sizeof(buf));
     if((strcmp(buf,"3")==0))
         snprintf(output_string, 32, "WPAand11i");
     else if((strcmp(buf,"2")==0))
@@ -3690,15 +3688,13 @@ INT wifi_setApRtsThreshold(INT apIndex, UINT threshold)
 INT wifi_getApWpaEncryptionMode(INT apIndex, CHAR *output_string)
 {
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    struct params params;
-    char buf[32];
-    char config_file[MAX_BUF_SIZE] = {0};
+    char *param_name, buf[32], config_file[MAX_BUF_SIZE] = {0};
 
     if(NULL == output_string)
         return RETURN_ERR;
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(config_file,"wpa",buf,32);
+    wifi_hostapdRead(config_file,"wpa",buf,sizeof(buf));
 
     if(strcmp(buf,"0")==0)
     {
@@ -3706,17 +3702,15 @@ INT wifi_getApWpaEncryptionMode(INT apIndex, CHAR *output_string)
         snprintf(output_string, 32, "None");
         return RETURN_OK;
     }
-
-    if((strcmp(buf,"3")==0))
-        params.name = "rsn_pairwise";
-    else if((strcmp(buf,"2")==0))
-        params.name = "rsn_pairwise";
+    else if((strcmp(buf,"3")==0) || (strcmp(buf,"2")==0))
+        param_name = "rsn_pairwise";
     else if((strcmp(buf,"1")==0))
-        params.name = "wpa_pairwise";
-
+        param_name = "wpa_pairwise";
+    else
+        return RETURN_ERR;
     memset(output_string,'\0',32);
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(config_file,params.name,output_string,32);
+    wifi_hostapdRead(config_file,param_name,output_string,32);
     wifi_dbg_printf("\n%s output_string=%s",__func__,output_string);
 
     if(strcmp(output_string,"TKIP") == 0)
@@ -3853,7 +3847,7 @@ INT wifi_getApBasicAuthenticationMode(INT apIndex, CHAR *authMode)
     else
     {
         sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-        wifi_hostapdRead(config_file,"wpa_key_mgmt",authMode,sizeof(authMode));
+        wifi_hostapdRead(config_file, "wpa_key_mgmt", authMode, 32);
         wifi_dbg_printf("\n[%s]: AuthMode Name is : %s",__func__,authMode);
         if(strcmp(authMode,"WPA-PSK") == 0)
 	        strcpy(authMode,"SharedAuthentication");
@@ -4063,7 +4057,7 @@ INT wifi_kickApAclAssociatedDevices(INT apIndex, BOOL enable)
     wifi_getApAclDevices( apIndex, aclArray, sizeof(aclArray));
     wifi_getApDevicesAssociated( apIndex, assocArray, sizeof(assocArray));
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(config_file,"interface",interface,64);
+    wifi_hostapdRead(config_file,"interface",interface,sizeof(interface));
 
     sprintf(buf,"iptables -F  WifiServices%d",apIndex);
     system(buf);
@@ -4461,14 +4455,14 @@ INT wifi_getApStatus(INT apIndex, CHAR *output_string)
 INT wifi_getApSsidAdvertisementEnable(INT apIndex, BOOL *output_bool) 
 {
     //get the running status
-    char output[128] = {0};
+    char output[16] = {0};
     char config_file[MAX_BUF_SIZE] = {0};
 
     if(!output_bool)
         return RETURN_ERR;
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(config_file,"ignore_broadcast_ssid",output,64);
+    wifi_hostapdRead(config_file,"ignore_broadcast_ssid",output,sizeof(output));
     wifi_dbg_printf("\n[%s]: ignore_broadcast_ssid Name is : %s",__func__,output);
 
     if(output==NULL)
@@ -4742,11 +4736,11 @@ INT wifi_setApSecurityModeEnabled(INT apIndex, CHAR *encMode)
 // PSK Key of 8 to 63 characters is considered an ASCII string, and 64 characters are considered as HEX value
 INT wifi_getApSecurityPreSharedKey(INT apIndex, CHAR *output_string)
 {	
-    char buf[32];
+    char buf[16];
     char config_file[MAX_BUF_SIZE] = {0};
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(config_file,"wpa",buf,64);
+    wifi_hostapdRead(config_file,"wpa",buf,sizeof(buf));
 
     if(output_string==NULL)
         return RETURN_ERR;
@@ -4808,7 +4802,7 @@ INT wifi_getApSecurityKeyPassphrase(INT apIndex, CHAR *output_string)
           return RETURN_ERR;
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(config_file,"wpa",buf,64);
+    wifi_hostapdRead(config_file,"wpa",buf,sizeof(buf));
 
     if(strcmp(buf,"0")==0)
     {
@@ -6112,11 +6106,11 @@ INT wifi_setApSecurityMFPConfig(INT apIndex, CHAR *MfpConfig)
 INT wifi_getRadioAutoChannelEnable(INT radioIndex, BOOL *output_bool)
 {
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    char output[50]={'\0'};
+    char output[16]={'\0'};
     char config_file[MAX_BUF_SIZE] = {0};
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex);
-    wifi_hostapdRead(config_file,"channel",output,64);
+    wifi_hostapdRead(config_file,"channel",output,sizeof(output));
 
     if(strcmp(output,"0")==0)
         *output_bool = TRUE;
@@ -6642,11 +6636,11 @@ INT wifi_getSSIDTrafficStats2(INT ssidIndex,wifi_ssidTrafficStats2_t *output_str
 INT wifi_getApIsolationEnable(INT apIndex, BOOL *output)
 {
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    char output_val[3]={'\0'};
+    char output_val[16]={'\0'};
     char config_file[MAX_BUF_SIZE] = {0};
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(config_file,"ap_isolate",output_val,64);
+    wifi_hostapdRead(config_file, "ap_isolate", output_val, sizeof(output_val));
 
     if( strcmp(output_val,"1") == 0 )
         *output=TRUE;
@@ -7274,7 +7268,7 @@ INT wifi_getBSSTransitionActivation(UINT apIndex, BOOL *activate)
     char config_file[MAX_BUF_SIZE] = {0};
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(config_file, "bss_transition", buf, 64);
+    wifi_hostapdRead(config_file, "bss_transition", buf, sizeof(buf));
     *activate = (strncmp("1",buf,1) == 0);
 
     return RETURN_OK;
@@ -7303,7 +7297,7 @@ INT wifi_getNeighborReportActivation(UINT apIndex, BOOL *activate)
     char config_file[MAX_BUF_SIZE] = {0};
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdRead(config_file, "rrm_neighbor_report", buf, 64);
+    wifi_hostapdRead(config_file, "rrm_neighbor_report", buf, sizeof(buf));
     *activate = (strncmp("1",buf,1) == 0);
 
     return RETURN_OK;
@@ -7520,6 +7514,14 @@ INT wifi_setRMBeaconRequest(UINT apIndex, CHAR *peer, wifi_BeaconRequest_t *in_r
     return RETURN_ERR;
 }*/
 
+INT wifi_getRadioBandUtilization (INT radioIndex, INT *output_percentage)
+{
+    return RETURN_OK;
+}
+INT wifi_getApAssociatedClientDiagnosticResult(INT apIndex, char *mac_addr, wifi_associated_dev3_t *dev_conn)
+{
+    return RETURN_OK;
+}
 #ifdef _WIFI_HAL_TEST_
 int main(int argc,char **argv)
 {
@@ -7541,6 +7543,37 @@ int main(int argc,char **argv)
     }    
 	
 	index = atoi(argv[2]);
+    if(strstr(argv[1], "wifi_getApName")!=NULL)
+    {
+        char buf[32]= {'\0'};
+        wifi_getApName(index,buf);
+        printf("Ap name is %s \n",buf);
+        return 0;
+    }
+    if(strstr(argv[1], "wifi_getRadioAutoChannelEnable")!=NULL)
+    {
+        bool b = false;
+        bool *output_bool = &b;
+        wifi_getRadioAutoChannelEnable(index,output_bool);
+        printf("Channel enabled = %d \n",b);
+        return 0;
+    }
+    if(strstr(argv[1], "wifi_getApWpaEncryptionMode")!=NULL)
+    {
+        char buf[32]= {'\0'};
+        wifi_getApWpaEncryptionMode(index,buf);
+        printf("encryption enabled = %s\n",buf);
+        return 0;
+    }
+    if(strstr(argv[1], "wifi_getApSsidAdvertisementEnable")!=NULL)
+    {
+        bool b = false;
+        bool *output_bool = &b;
+        wifi_getApSsidAdvertisementEnable(index,output_bool);
+        printf("advertisment enabled =  %d\n",b);
+        return 0;
+    }
+
     if(strstr(argv[1],"wifi_getApAssociatedDeviceTidStatsResult")!=NULL)
     {
         printf("arguments are %s %s %s \n", argv[1],argv[2],argv[3]);

@@ -1032,8 +1032,6 @@ INT wifi_getRadioEnable(INT radioIndex, BOOL *output_bool)      //RDKB
                *output_bool=TRUE;
 
         //TODO: check if hostapd with config is running
-
-        *output_bool = FALSE;
         return RETURN_OK;
 }
 

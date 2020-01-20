@@ -7502,17 +7502,17 @@ INT wifi_setRMBeaconRequest(UINT apIndex, CHAR *peer, wifi_BeaconRequest_t *in_r
     return RETURN_ERR;
 }
 
-/*INT wifi_getRadioChannels(INT radioIndex, wifi_channelMap_t *outputMap, INT outputMapSize)
+INT wifi_getRadioChannels(INT radioIndex, wifi_channelMap_t *outputMap, INT outputMapSize)
 {
     // TODO Implement me!
     return RETURN_ERR;
-}*/
+}
 
-/*INT wifi_chan_eventRegister(wifi_chan_eventCB_t eventCb)
+INT wifi_chan_eventRegister(wifi_chan_eventCB_t eventCb)
 {
     // TODO Implement me!
     return RETURN_ERR;
-}*/
+}
 
 INT wifi_getRadioBandUtilization (INT radioIndex, INT *output_percentage)
 {

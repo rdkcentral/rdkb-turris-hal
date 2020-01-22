@@ -1018,6 +1018,8 @@ INT wifi_getRadioEnable(INT radioIndex, BOOL *output_bool)      //RDKB
         if (NULL == output_bool)
                 return RETURN_ERR;
 
+        *output_bool = FALSE;
+
         // Check only supported radios
         if (!((radioIndex == 0) || (radioIndex == 1)))
                 return RETURN_ERR;

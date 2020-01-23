@@ -27,7 +27,7 @@ hardware_platform = armv7ahf-neon-rdk-linux-musleabi
 lib_LTLIBRARIES = libhal_wifi.la
 libhal_wifi_la_CPPFLAGS = -I$(top_srcdir)/include $(CPPFLAGS)
 libhal_wifi_la_SOURCES = wifi_hal.c
-libhal_wifi_la_LDFLAGS =
+libhal_wifi_la_LDFLAGS = -lev -lwpa_client
 
 #wifihal test binary
 bin_PROGRAMS = wifihal

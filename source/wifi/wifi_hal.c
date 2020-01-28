@@ -1023,13 +1023,12 @@ INT wifi_getRadioEnable(INT radioIndex, BOOL *output_bool)      //RDKB
     if (!((radioIndex == 0) || (radioIndex == 1)))
         return RETURN_ERR;
 
-    snprintf(cmd, sizeof(cmd), "ifconfig %s%d | grep RUNNING ", AP_PREFIX, radioIndex);
+    snprintf(cmd, sizeof(cmd), "ifconfig %s | grep RUNNING ", ifname);
     _syscmd(cmd, buf, sizeof(buf));
     if(strlen(buf)>0)
-        *output_bool=TRUE;
-
-    //TODO: check if hostapd with config is running
-
+       *output_bool = TRUE;
+    else //TODO: check if hostapd with config is running
+        *output_bool = FALSE;
     return RETURN_OK;
 }
 
@@ -1062,104 +1061,40 @@ INT wifi_getRadioEnable(INT radioIndex, BOOL *output_bool)	//RDKB
 #endif
 INT wifi_setRadioEnable(INT radioIndex, BOOL enable)            //RDKB
 {
-    char IfName[MAX_BUF_SIZE]={'\0'};
-    char HConf_file[MAX_BUF_SIZE]={'\0'};
-    char buf[MAX_BUF_SIZE]={'\0'};
-    char cmd[MAX_CMD_SIZE]={'\0'};
-    char ssid_cur_value[50] ={0};
-    BOOL GetssidEnable;
-    int ret = 0;
+//TODO: VERIFICATION IS NEEDED!!!!!!!!!!!!!!!!!!!!
+	char ifname[IF_NAMESIZE] = {0};
+	char cmd[MAX_CMD_SIZE] = {0};
+	char buf[MAX_BUF_SIZE] = {0};
+	BOOL tmp_enable = FALSE;
+	char config_file[MAX_BUF_SIZE] = {0};
+	int ret = 0;
 
-    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    wifi_getSSIDEnable(radioIndex,&GetssidEnable);
-    if (GetssidEnable == enable)
-        return RETURN_OK;
+	wifi_getRadioEnable(radioIndex, &tmp_enable);
+	if (tmp_enable == enable)
+		return RETURN_OK;
 
-    if(radioIndex == 0)
-    {
-        sprintf(buf,"%s%d%s","echo ",GetssidEnable," > /tmp/Get2gssidEnable.txt");
-        system("rm /tmp/Get2gRadioEnable.txt");
-        sprintf(cmd,"%s%d%s","echo ",enable," > /tmp/Get2gRadioEnable.txt");
-    }
-    else if(radioIndex == 1)
-    {
-        sprintf(buf,"%s%d%s","echo ",GetssidEnable," > /tmp/Get5gssidEnable.txt");
-        system("rm /tmp/Get5gRadioEnable.txt");
-        sprintf(cmd,"%s%d%s","echo ",enable," > /tmp/Get5gRadioEnable.txt");
-    }
-    system(buf);
-    system(cmd);
-
-    sprintf(HConf_file,"%s%d%s","/nvram/hostapd",radioIndex,".conf");
-    GetInterfaceName(IfName,HConf_file);
-    if(enable == FALSE)
-    {
-        sprintf(cmd,"%s%s%s","ifconfig ",IfName," down");
-        system(cmd);
-        if((radioIndex == 2) || (radioIndex == 3))  //radio interface for backhaul connection for WiFi Extender functionality
-        {
-            snprintf(cmd, sizeof(cmd), "hostapd_cli -i global raw REMOVE %s", IfName);
-            ret = _syscmd(cmd, buf, sizeof(buf));
-            if ((ret != 0) || (strlen(buf)<=0) || strncmp("OK", buf, 2))
-                return RETURN_ERR;
-        }
-    }
-    else
-    {
-        sprintf(cmd,"%s%s%s","ps eaf | grep ",HConf_file," | grep -v grep | awk '{print $1}' | xargs kill -9");
-        system(cmd);
-        sprintf(cmd,"%s%s","/usr/sbin/hostapd -B ",HConf_file);
-        if(radioIndex == 0)
-            wifi_RestartPrivateWifi_2G();
-        if(radioIndex == 1) 
-            wifi_RestartHostapd_5G(radioIndex);
-        system("sleep 5");
-        if((radioIndex == 0) || (radioIndex == 1))  //if((SSID.Enable == TRUE ) && (Radio.Enable == TRUE)) then bring's up SSID
-        {
-            if((enable == TRUE) && (GetssidEnable == TRUE))
-            {
-                system(cmd);
-            }
-            if(radioIndex == 1)
-            {
-                File_Reading("cat /tmp/GetPub5gssidEnable.txt",&ssid_cur_value);
-                /* GetInterfaceName(IfName,"/nvram/hostapd5.conf");
-                   sprintf(cmd,"%s%s%s","ifconfig ",IfName," | grep UP | tr -s ' ' | cut -d ' ' -f2");
-                   _syscmd(cmd,buf,sizeof(buf));
-                   if((strlen(buf)>0) && (strcmp(ssid_cur_value,"1") == 0))*/
-                if(strcmp(ssid_cur_value,"1") == 0)
-                {
-                    restarthostapd_all("/nvram/hostapd5.conf");
-                }
-            }
-        }
-        else if((radioIndex == 2) || (radioIndex == 3))  //radio interface for backhaul connection for WiFi Extender functionality
-        {
-            snprintf(cmd, sizeof(cmd), "hostapd_cli -i global raw ADD bss_config=%s:%s", IfName, HConf_file);
-            ret = _syscmd(cmd, buf, sizeof(buf));
-            if ((ret != 0) || (strlen(buf)<=0) || strncmp("OK", buf, 2))
-                return RETURN_ERR;
-        }
+	ret = GetInterfaceNameFromIdx(radioIndex, ifname);
+	if (ret != 0)
+		return RETURN_ERR;
 #if 0
-        else if ((radioIndex == 4) || (radioIndex == 5))
-        {
-            system(cmd);
-            if(radioIndex == 5)
-            {
-                GetInterfaceName(IfName,"/nvram/hostapd1.conf");
-                sprintf(cmd,"%s%s%s","ifconfig ",IfName," | grep UP | tr -s ' ' | cut -d ' ' -f2");
-                _syscmd(cmd,buf,sizeof(buf));
-                if(strlen(buf)>0)
-                {
-                    system("ps -eaf | grep hostapd1.conf | grep -v grep | awk '{print $1}' | xargs kill -9");
-                    system("sleep 3");
-                    system("/usr/sbin/hostapd -B /nvram/hostapd1.conf");
-                }
-            }
-        }
+	//Set wifi config. Wait for wifi reset to apply
+	sprintf(cmd, "ifconfig %s down", ifname);
+	ret = _syscmd(cmd, buf, sizeof(buf));
+	if (ret != 0)
+		return RETURN_ERR;
 #endif
-    }
-    return RETURN_OK;
+        sprintf(config_file, "%s%d.conf", CONFIG_PREFIX, radioIndex);
+
+        if(enable == FALSE)
+	    sprintf(cmd, "hostapd_cli -i global raw REMOVE %s", ifname);
+        else
+	    sprintf(cmd, "hostapd_cli -i global raw ADD bss_config=%s:%s", ifname, config_file);
+
+        ret = _syscmd(cmd, buf, sizeof(buf));
+        if ((ret != 0) || (strlen(buf) <= 0) || strncmp("OK", buf, 2))
+            return RETURN_ERR;
+
+	return RETURN_OK;
 }
 #if 0
 //Set the Radio enable config parameter
@@ -1365,84 +1300,6 @@ INT wifi_getRadioOperatingFrequencyBand(INT radioIndex, CHAR *output_string) //T
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 
     return RETURN_OK;
-#if 0
-    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    char buf[MAX_BUF_SIZE]={'\0'};
-    char str[MAX_BUF_SIZE]={'\0'};
-    char cmd[MAX_CMD_SIZE]={'\0'};
-    char *ch=NULL;
-    char *ch2=NULL;
-    char ch1[5]="0";
-
-    sprintf(cmd,"grep 'channel=' %s%d.conf",CONFIG_PREFIX,radioIndex);
-
-    if(_syscmd(cmd,buf,sizeof(buf)) == RETURN_ERR)
-    {
-        printf("\nError %d:%s:%s\n",__LINE__,__func__,__FILE__);
-        return RETURN_ERR;
-    }
-
-    ch=strchr(buf,'\n');
-    *ch='\0';
-    ch=strchr(buf,'=');
-    if(ch==NULL)
-        return RETURN_ERR;
-    ch++;
-
-    if(strlen(ch)==1)
-    {
-        strcat(ch1,ch);
-
-    }
-    else
-    {
-        strcpy(ch1,ch);
-    }
-
-
-
-    sprintf(cmd,"grep 'interface=' %s%d.conf",CONFIG_PREFIX,radioIndex);
-    if(_syscmd(cmd,str,64) ==  RETURN_ERR)
-    {
-        wifi_dbg_printf("\nError %d:%s:%s\n",__LINE__,__func__,__FILE__);
-        return RETURN_ERR;
-    }
-
-
-    ch2=strchr(str,'\n');
-    //replace \n with \0
-    *ch2='\0';
-    ch2=strchr(str,'=');
-    if(ch2==NULL)
-    {
-        wifi_dbg_printf("\nError %d:%s:%s\n",__LINE__,__func__,__FILE__);
-        return RETURN_ERR;
-    }
-    else
-        wifi_dbg_printf("%s",ch2+1);
-    ch2++;
-
-
-    sprintf(cmd,"iwlist %s frequency|grep 'Channel %s'",ch2,ch1);
-    memset(buf,'\0',sizeof(buf));
-    if(_syscmd(cmd,buf,sizeof(buf))==RETURN_ERR)
-    {
-        wifi_dbg_printf("\nError %d:%s:%s\n",__LINE__,__func__,__FILE__);
-        return RETURN_ERR;
-    }
-
-
-    if(strstr(buf,"2.4")!=NULL)
-    {
-        strcpy(output_string,"2.4GHz");
-    }
-    if(strstr(buf,"5.")!=NULL)
-    {
-        strcpy(output_string,"5GHz");
-    }
-    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-    return RETURN_OK;
-#endif
 }
 
 //Get the Supported Radio Mode. eg: "b,g,n"; "n,ac"
@@ -2204,7 +2061,7 @@ INT wifi_getRadioTransmitPower(INT radioIndex, ULONG *output_ulong)	//RDKB
     //zqiu:TODO:save config
     apIndex = (radioIndex==0) ?0 :1;
 
-    snprintf(cmd, sizeof(cmd),  "iwlist %s%d txpower | grep Tx-Power | cut -d'=' -f2", AP_PREFIX, apIndex);
+    snprintf(cmd, sizeof(cmd),  "iwconfig %s%d | grep Tx-Power | cut -d'=' -f2 | cut -d ' ' -f1", AP_PREFIX, apIndex);
     _syscmd(cmd, buf, sizeof(buf));
     *output_ulong = atol(buf);
 
@@ -4433,40 +4290,12 @@ INT wifi_getApEnable(INT apIndex, BOOL *output_bool)
         sprintf(cmd,"%s%s%s","ifconfig ",IfName," | grep RUNNING | tr -s ' ' | cut -d ' ' -f4");
         _syscmd(cmd,buf,sizeof(buf));
         if(strlen(buf)>0)
-        {
             *output_bool=1;
-            return RETURN_OK;
-        }
-        if(apIndex == 0)
-            fp = fopen("/tmp/Get2gssidEnable.txt","r");
-        else if(apIndex == 1)
-            fp = fopen("/tmp/Get5gssidEnable.txt","r");
-        else if(apIndex == 4)
-            fp = fopen("/tmp/GetPub2gssidEnable.txt","r");
-        else if(apIndex == 5)
-            fp = fopen("/tmp/GetPub5gssidEnable.txt","r");
-        if(fp == NULL)
-        {
-            *output_bool = 0;
-            return RETURN_OK;
-        }
-        if(fgets(path, sizeof(path)-1, fp) != NULL)
-        {
-            for(count=0;path[count]!='\n';count++)
-                tmp_status[count]=path[count];
-            tmp_status[count]='\0';
-        }
-        fclose(fp);
-        if(strcmp(tmp_status,"0") == 0)
-            *output_bool = 0;
         else
-            *output_bool = 1;
+            *output_bool=0;
+
         return RETURN_OK;
     }
-    if((apIndex > 5 ) && (apIndex < 17))
-        return RETURN_OK;
-
-    return RETURN_ERR;
 }
 
 // Outputs the AP "Enabled" "Disabled" status from driver 
@@ -6628,40 +6457,35 @@ INT wifi_getApAssociatedDeviceStats(
 
     sprintf(HConf_file,"%s%d%s","/nvram/hostapd",apIndex,".conf");
     GetInterfaceName(interface_name,HConf_file);
-
     for(i=0;i<=4;i++)
     {
 
-        sprintf(cmd,"%s%s%s%s%s","iw dev ",interface_name," station dump |  grep -i -A 18  ",clientMacAddress,"  | grep ",StatsName[i]," | cut -d ':' -f2");
-
+        sprintf(cmd,"%s%s%s%s%s%s%s","iw dev ",interface_name," station dump |  grep -i -A 18  ",clientMacAddress,"  | grep '",StatsName[i],"' | cut -d ':' -f2 | tr -d '\t'");
         _syscmd(cmd,buf,sizeof(buf));
         for(count = 0;buf[count]!='\n';count++)
             tmp_buf[count] = buf[count]; //ajusting the size
         tmp_buf[count] = '\0';
 
         if(strcmp(StatsName[i],"rx packets") == 0)
-        {
-            strcpy(dev_stats->cli_rx_frames,tmp_buf);
-        }
+            dev_stats->cli_rx_frames = atol(tmp_buf);
         else if(strcmp(StatsName[i],"tx packets") == 0)
-        {
-            strcpy(dev_stats->cli_tx_frames,tmp_buf);
-        }
+            dev_stats->cli_tx_frames = atol(tmp_buf);
         else if(strcmp(StatsName[i],"rx bytes") == 0)
-        {
-            strcpy(dev_stats->cli_rx_bytes,tmp_buf);
-        }
+            dev_stats->cli_rx_bytes = atol(tmp_buf);
         else if(strcmp(StatsName[i],"tx bytes") == 0)
-        {
-            strcpy(dev_stats->cli_tx_bytes,tmp_buf);
-        }
+            dev_stats->cli_tx_bytes = atol(tmp_buf);
         else if(strcmp(StatsName[i],"tx failed") == 0)
-        {
-            strcpy(dev_stats->cli_rx_bytes,tmp_buf);
-        }
+            dev_stats->cli_rx_bytes = atol(tmp_buf);
         else
             printf("No Matching stats info");
     }
+    //TODO:
+    dev_stats->cli_rx_retries=0;
+    dev_stats->cli_tx_retries=0;
+    dev_stats->cli_rx_errors=0;
+    dev_stats->cli_tx_errors=0;
+    dev_stats->cli_rx_rate=0;
+    dev_stats->cli_tx_rate=0;
     return RETURN_OK;
 }
 
@@ -6719,6 +6543,7 @@ INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex,wifi_associated_dev2
     *associated_dev_array = NULL;
     char interface_name[50] = {0};
     char HConf_file[MAX_BUF_SIZE] = {'\0'};
+    wifi_associated_dev2_t* temp = NULL;
 
     sprintf(HConf_file,"%s%d%s","/nvram/hostapd",apIndex,".conf");
     GetInterfaceName(interface_name,HConf_file);
@@ -6744,7 +6569,6 @@ INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex,wifi_associated_dev2
     }
     else
     {
-        wifi_associated_dev2_t* temp = NULL;
         temp = (wifi_associated_dev2_t*)calloc(1, sizeof(wifi_associated_dev2_t)*wifi_count) ;
         if(temp == NULL)
         {
@@ -6844,6 +6668,7 @@ INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex,wifi_associated_dev2
             pclose(fp);
         }
     }
+    *associated_dev_array = temp;
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
     return RETURN_OK;
 
@@ -8090,12 +7915,434 @@ int main(int argc,char **argv)
         return wifi_reset();
     }    
 
+    if(strstr(argv[1],"wifi_getRadioNumberOfEntries")!=NULL)
+    {
+       long entries=0;
+       wifi_getRadioNumberOfEntries(&entries);
+       printf("*** Number of Radio Entries are %ld ***\n",entries);
+       return 0;
+    }
+    if(strstr(argv[1],"wifi_getSSIDNumberOfEntries")!=NULL)
+    {
+       long entries=0;
+       wifi_getSSIDNumberOfEntries(&entries);
+       printf("*** Number of SSID Entries are %ld\n ***",entries);
+       return 0;
+    }
+    if(strstr(argv[1],"wifi_getHalVersion")!=NULL)
+    {
+        char buf[64] = {'\0'} ;
+        wifi_getHalVersion(buf);
+        printf("***Hal version is %s***\n",buf);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_steering_eventUnregister")!=NULL)
+    {
+        int status = 0;
+        status = wifi_steering_eventUnregister();
+        if(status < 0)
+            printf("*** wifi_steering_eventUnregister is FAILED ***\n");
+        return 0;
+    }
+
     index = atoi(argv[2]);
+
+    if(strstr(argv[1], "getApAssociatedDeviceDiagnosticResult2")!=NULL) {
+        wifi_associated_dev2_t *associated_dev_array[16];
+        UINT array_size=0;
+        UINT i=0;
+        ret=wifi_getApAssociatedDeviceDiagnosticResult2(index, associated_dev_array, &array_size);
+        printf("%s %d: array_size=%d, returns %d\n", argv[1], index, array_size, ret);
+        for(i=0; i<array_size; i++) {
+            printf("  associated_dev %d:\n", i);
+            printf("     cli_IPAddress      = %s\n", associated_dev_array[i]->cli_IPAddress);
+            printf("     cli_AuthenticationState  =%d\n", associated_dev_array[i]->cli_AuthenticationState);
+            printf("     cli_LastDataDownlinkRate  =%d\n", associated_dev_array[i]->cli_LastDataDownlinkRate);
+            printf("     cli_LastDataUplinkRate    =%d\n", associated_dev_array[i]->cli_LastDataUplinkRate);
+            printf("     cli_SignalStrength      =%d\n", associated_dev_array[i]->cli_SignalStrength);
+            printf("     cli_Retransmissions     =%d\n", associated_dev_array[i]->cli_Retransmissions);
+            printf("     cli_OperatingStandard   =%s\n", associated_dev_array[i]->cli_OperatingStandard);
+            printf("     cli_OperatingChannelBandwidth =%s\n", associated_dev_array[i]->cli_OperatingChannelBandwidth);
+            printf("     cli_SNR                   =%d\n", associated_dev_array[i]->cli_SNR);
+            printf("     cli_InterferenceSources  =%s\n", associated_dev_array[i]->cli_InterferenceSources);
+            printf("     cli_DataFramesSentAck    =%lld\n", associated_dev_array[i]->cli_DataFramesSentAck);
+            printf("     cli_DataFramesSentNoAck  =%lld\n", associated_dev_array[i]->cli_DataFramesSentNoAck);
+            printf("     cli_BytesSent             =%lld\n", associated_dev_array[i]->cli_BytesSent);
+            printf("     cli_BytesReceived         =%lld\n", associated_dev_array[i]->cli_BytesReceived);
+            printf("     cli_RSSI                   =%d\n", associated_dev_array[i]->cli_RSSI);
+            printf("     cli_MinRSS                 =%d\n", associated_dev_array[i]->cli_MinRSSI);
+            printf("     cli_MaxRSSI                =%d\n", associated_dev_array[i]->cli_MaxRSSI);
+            printf("     cli_Disassociations        =%d\n", associated_dev_array[i]->cli_Disassociations);
+            printf("     cli_AuthenticationFailures =%d\n", associated_dev_array[i]->cli_AuthenticationFailures);
+            printf("     cli_Associations                =%lld\n", associated_dev_array[i]->cli_Associations);
+        }
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getApAssociatedDeviceRxStatsResult")!=NULL)
+    {
+        mac_address_t *st;
+        int output_array_size = 0;
+        u64 handle= 0;
+        wifi_associated_dev_rate_info_rx_stats_t stats_array;
+        st = argv[3];
+        wifi_getApAssociatedDeviceRxStatsResult(index,st,&stats_array,output_array_size,handle);
+        printf("TX results:\nbytes= %llu \n msdu = %llu\n mpdu=%lld\n ppdu=%lld\n retries=%lld\n  nss=%d\n mcs=%d \n bw=%d\n rssi_combined =%d \n",stats_array.bytes,stats_array.msdus,stats_array.mpdus,stats_array.ppdus,stats_array.retries,stats_array.nss,stats_array.mcs,stats_array.bw,stats_array.rssi_combined);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getApAssociatedDeviceTxStatsResult")!=NULL)
+    {
+        mac_address_t *st;
+        int output_array_size = 0;
+        u64 handle= 0;
+        wifi_associated_dev_rate_info_tx_stats_t stats_array;
+        st = argv[3];
+        wifi_getApAssociatedDeviceTxStatsResult(index,st,&stats_array,output_array_size,handle);
+        printf("TX results:\nbytes= %llu \n msdu = %llu\n mpdu=%lld\n ppdu=%lld\n retries=%lld\n nss=%d\n attempts=%lld\n mcs=%d \n bw=%d\n",stats_array.bytes,stats_array.msdus,stats_array.mpdus,stats_array.ppdus,stats_array.retries,stats_array.nss,stats_array.attempts,stats_array.mcs,stats_array.bw);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getRadioChannelStats")!=NULL)
+    {
+        int array_size= atoi(argv[3]);
+        wifi_channelStats_t input_output_channelStats_array[array_size];
+        wifi_getRadioChannelStats(index,input_output_channelStats_array,array_size);
+        if(array_size<=0)
+        {
+            printf("Please enter a valid array size\n");
+            return -1;
+        }
+        for(int i=0;i<array_size;i++)
+        {
+            printf("Channel stats:\n Noise=%d \n busy_rx=%lld\n busy_tx=%lld\n busy =%lld \n busy_ext = %lld \n total =%lld\n", input_output_channelStats_array[i].ch_noise,input_output_channelStats_array[i].ch_utilization_busy_rx,input_output_channelStats_array[i].ch_utilization_busy_rx,input_output_channelStats_array[i].ch_utilization_busy_rx,input_output_channelStats_array[i].ch_utilization_busy_ext,input_output_channelStats_array[i].ch_utilization_busy_ext,input_output_channelStats_array[i].ch_utilization_total);
+        }
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getSSIDTrafficStats2")!=NULL)
+    {
+        wifi_ssidTrafficStats2_t output_struct;
+        wifi_getSSIDTrafficStats2(index,&output_struct);
+
+        printf("Traffic stats:\n BytesReceived = %lld \n PacketsSent=%lld\n PacketsReceived=%lld\n RetransCount=%lld\n ssid_FailedRetransCount=%lld\n ssid_RetryCount=%lld\n ssid_MultipleRetryCount=%lld\n ssid_ACKFailureCount=%lld\n ssid_AggregatedPacketCount=%lld\n ssid_ErrorsSent=%lld\n ssid_ErrorsReceived=%lld \n ssid_UnicastPacketsSent=%lld\n ssid_UnicastPacketsReceived=%lld\n ssid_DiscardedPacketsSent\n", output_struct.ssid_BytesReceived,output_struct.ssid_PacketsSent,output_struct.ssid_PacketsReceived,output_struct.ssid_RetransCount,output_struct.ssid_FailedRetransCount,output_struct.ssid_RetryCount,output_struct.ssid_MultipleRetryCount,output_struct.ssid_ACKFailureCount,output_struct.ssid_AggregatedPacketCount,output_struct.ssid_ErrorsSent,output_struct.ssid_ErrorsReceived,output_struct.ssid_UnicastPacketsSent,output_struct.ssid_UnicastPacketsReceived,output_struct.ssid_DiscardedPacketsSent);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getApAssociatedDeviceStats")!=NULL)
+    {
+        mac_address_t *st;
+        wifi_associated_dev_stats_t dev_stats;
+        st = argv[3];
+        wifi_getApAssociatedDeviceStats(index,st,&dev_stats,0);
+        printf("Asso Device stats: \n cli_rx_bytes =%lld \n cli_tx_bytes=%lld \n cli_rx_frames=%lld\n cli_tx_frames=%lld\n cli_rx_retries=%lld\n cli_tx_retries=%lld \n cli_rx_errors=%lld \n cli_tx_errors=%lld \n cli_rx_rate=%lld \n cli_tx_rate=%lld\n",dev_stats.cli_rx_bytes,dev_stats.cli_tx_bytes,dev_stats.cli_rx_frames,dev_stats.cli_tx_frames,dev_stats.cli_rx_retries,dev_stats.cli_tx_retries,dev_stats.cli_rx_errors,dev_stats.cli_tx_errors,dev_stats.cli_rx_rate,dev_stats.cli_tx_rate);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_setRadioEnable")!=NULL)
+    {
+        bool enable =false;
+        int status = 0;
+        enable = atoi(argv[3]);
+        wifi_setRadioEnable(index,enable);
+        if(status < 0)
+            printf("*** wifi_setRadioEnable is FAILED ***\n");
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_addApAclDevice")!=NULL)
+    {
+        char buf[32] = {'\0'};
+        int status = 0;
+        strcpy(buf,argv[3]);
+        status = wifi_addApAclDevice(index,buf);
+        if(status < 0)
+           printf("*** wifi_addApAclDevice is FAILED## *** \n");
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_delApAclDevices")!=NULL)
+    {
+        int status = 0;
+        status = wifi_delApAclDevices(index);
+        if(status < 0)
+           printf("*** wifi_delApAclDevices is FAILED## *** \n");
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_setApMacAddressControlMode")!=NULL)
+    {
+        int mode = atoi(argv[3]);
+        int status = 0;
+        status = wifi_setApMacAddressControlMode(index,mode);
+        if(status < 0)
+           printf("*** wifi_setApMacAddressControlMode is FAILED## *** \n");
+        return 0;
+    }
+
+    if(strstr(argv[1],"wifi_setRadioOperatingChannelBandwidth")!=NULL)
+    {
+        char buf[32] = {'\0'};
+        int status = 0;
+        strcpy(buf,argv[3]);
+        status = wifi_setRadioOperatingChannelBandwidth(index,buf);
+        if(status < 0)
+           printf("*** wifi_setRadioOperatingChannelBandwidth is FAILED## *** \n");
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_setApIsolationEnable")!=NULL)
+    {
+        bool b = atoi(argv[3]);
+        int status =0;
+        status = wifi_setApIsolationEnable(index,b);
+        if(status < 0)
+           printf("*** wifi_setApIsolationEnable is FAILED## *** \n");
+        return 0;
+    }
+
+    if(strstr(argv[1],"wifi_setApSecurityKeyPassphrase")!=NULL)
+    {
+        char buf[32] = {'\0'};
+        int status =0;
+        strcpy(buf,argv[3]);
+        status = wifi_setApSecurityKeyPassphrase(index,buf);
+        if(status < 0)
+           printf("*** wifi_setApSecurityKeyPassphrase is FAILED## *** \n");
+        return 0;
+    }
+
+    if(strstr(argv[1],"wifi_setApSecurityModeEnabled")!=NULL)
+    {
+        char buf[32] = {'\0'};
+        int status =0;
+        strcpy(buf,argv[3]);
+        status = wifi_setApSecurityModeEnabled(index,buf);
+        if(status < 0)
+           printf("*** wifi_setApSecurityModeEnabled is FAILED## *** \n");
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_pushRadioChannel2")!=NULL)
+    {
+       int channel = atoi(argv[3]);
+       int chan_width = atoi(argv[4]);
+       int beacon = atoi(argv[5]);
+       int status = 0;
+       status = wifi_pushRadioChannel2(index,channel,chan_width,beacon);
+       if(status < 0)
+           printf("*** wifi_pushSSID is FAILED## *** \n");
+       return 0;
+    }
+    if(strstr(argv[1],"wifi_pushSSID")!=NULL)
+    {
+       int status = 0;
+       char buf[32] = {'\0'};
+       strcpy(buf,argv[3]);
+       wifi_pushSSID(index,buf);
+       if(status < 0)
+           printf("*** wifi_pushSSID is FAILED## *** \n");
+       return 0;
+    }
+    if(strstr(argv[1],"wifi_setSSIDName")!=NULL)
+    {
+       int status = 0;
+       char buf[32] = {'\0'};
+       strcpy(buf,argv[3]);
+       status = wifi_setSSIDName(index,buf);
+       if(status < 0)
+           printf("*** wifi_setSSIDName is FAILED## *** \n");
+       return 0;
+    }
+    if(strstr(argv[1],"wifi_setSSIDEnable")!=NULL)
+    {
+        int status = 0;
+        bool b = atoi(argv[3]);
+        status = wifi_setSSIDEnable(index,b);
+        if(status < 0)
+            printf("*** wifi_setSSIDEnable is FAILED## *** \n");
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getApMacAddressControlMode")!=NULL)
+    {
+         int filter =0;
+         int *mode = &filter;
+         wifi_getApMacAddressControlMode(index,mode);
+         printf("*** Filter Mode for AP %d is %d ***\n",index,filter);
+         return 0;
+    }
+    if(strstr(argv[1],"wifi_getRadioStandard")!=NULL)
+    {
+         char buf[64] = {'\0'};
+         bool g,n,ac;
+         bool *gOnly = &g, *nOnly = &n, *acOnly = &ac;
+         wifi_getRadioStandard(index,buf,gOnly,nOnly,acOnly);
+         printf("Radio standard for AP %d, buf = %s , gOnly=%d , nOnly=%d ,acOnly=%d ***\n",index,buf,g,n,ac);
+         return 0;
+    }
+    if(strstr(argv[1],"wifi_getAssociatedDeviceDetail")!=NULL)
+    {
+        int devIndex = atoi(argv[3]);
+        wifi_device_t output_struct;
+        wifi_getAssociatedDeviceDetail(index,devIndex,&output_struct);
+        printf("*** state = %d \n,rx_rate=%d \n,tx_rate=%d \n,SignalStrength=%d \n,mac = %s\n ***",output_struct.wifi_devAssociatedDeviceAuthentiationState, output_struct.wifi_devRxRate,output_struct.wifi_devTxRate,output_struct.wifi_devSignalStrength,output_struct.wifi_devMacAddress);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getApSecurityRadiusServer")!=NULL)
+    {
+        int port = 0;
+        int *Port_output = &port;
+        char ip[64] = {'\0'}, RadiusSecret_output[64] = {'\0'};
+        wifi_getApSecurityRadiusServer(index,ip,Port_output,RadiusSecret_output);
+        printf("Radius server for  AP %d , ip = %s , port = %d ,secret output = %s ***\n",index,ip,port,RadiusSecret_output);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getApAclDevices")!=NULL)
+    {
+        char buf[356] = {'\0'};
+        wifi_getApAclDevices(index,buf,sizeof(buf));
+        printf("** Acl device list for AP %d are %s ***",index,buf);
+        return 0;
+    }
+
+    if(strstr(argv[1],"wifi_getBaseBSSID")!=NULL)
+    {
+        char buf[64] = {'\0'};
+        wifi_getBaseBSSID(index,buf);
+        printf("*** BSSID for AP %d is %s ***\n",index,buf);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getSSIDNameStatus")!=NULL)
+    {
+        char buf[32] = {'\0'};
+        wifi_getSSIDNameStatus(index,buf);
+        printf("*** SSID name status for AP %d is %s ***\n",index,buf);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getSSIDName")!=NULL)
+    {
+        char buf[32] = {'\0'};
+        wifi_getSSIDName(index,buf);
+        printf("*** wifi_getSSIDName for AP %d is %s ***\n",index,buf);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getApIsolationEnable")!=NULL)
+    {
+        bool b = false;
+        bool *output = &b;
+        wifi_getApIsolationEnable(index,output);
+        printf("*** isolation enbled for AP index %d is %d ***\n",index,b);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getApBridgeInfo")!=NULL)
+    {
+        char bridge[32] = {'\0'},ip[32] = {'\0'},subnet[32] = {'\0'};
+        wifi_getApBridgeInfo(index,bridge,ip,subnet);
+        printf("*** bridge is %s, ip is %s, subnet is %s \n ***",bridge,ip,subnet);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getSSIDEnable")!=NULL)
+    {
+        bool b = false;
+        bool *output_bool = &b;
+        wifi_getSSIDEnable(index,output_bool);
+        printf("*** SSID enabled fir AP index %d is %d ***\n",index,b);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getApSecurityKeyPassphrase")!=NULL)
+    {
+        char buf[64] = {'\0'};
+        wifi_getApSecurityKeyPassphrase(index,buf);
+        printf("*** The PassPhrase for AP index %d is %s ***\n",index,buf);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getApSecurityModeEnabled")!=NULL)
+    {
+        char buf[64] = {'\0'};
+        wifi_getApSecurityModeEnabled(index,buf);
+        printf("*** Security Mode for AP %d is %s ***\n",index,buf);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getRadioPossibleChannels")!=NULL)
+    {
+        char buf[64] = {'\0'};
+        wifi_getRadioPossibleChannels(index,buf);
+        printf("*** Possible cahnnels for index %d is %s ***\n",index,buf);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getRadioTransmitPower")!=NULL)
+    {
+        long transPower = 0;
+        long *output_ulong = &transPower;
+        wifi_getRadioTransmitPower(index,output_ulong);
+        printf("*** Transmit Power index %d is %ld ***\n",index,transPower);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getRadioChannel")!=NULL)
+    {
+       long channel = 0;
+       long *output_ulong = &channel;
+       wifi_getRadioChannel(index,output_ulong);
+       printf("*** channel for index %d is %ld ***\n",index,channel);
+       return 0;
+    }
+    if(strstr(argv[1],"wifi_getRadioChannelsInUse")!=NULL)
+    {
+        char buf[256] = {'\0'};
+        wifi_getRadioChannelsInUse(index,buf);
+        printf("*** channels in use for index %d is %s ***\n",index,buf);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getApNumDevicesAssociated")!=NULL)
+    {
+        long deviceCount = 0;
+        long *output_ulong = &deviceCount;
+        wifi_getApNumDevicesAssociated(index,output_ulong);
+        printf("** Number of Associated devices on ApIndex %d is %ld ***\n",index,deviceCount);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getSSIDRadioIndex")!=NULL)
+    {
+        int radio = 0;
+        int *radioIndex = &radio;
+        wifi_getSSIDRadioIndex(index, radioIndex);
+        printf("***radio index is %d for ssid-index %d ***\n",radio,index);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getRadioOperatingFrequencyBand")!=NULL)
+    {
+        char buf[64] = {'\0'};
+        wifi_getRadioOperatingFrequencyBand(index,buf);
+        printf("***  RadioOperatingFrequencyBand index %d is %s ***\n",index,buf);
+        return 0;
+    }
+    if(strstr(argv[1],"wifi_getRadioIfName")!=NULL)
+    {
+       char buf[64] = {'\0'};
+       wifi_getRadioIfName(index,buf);
+       printf("*** Radio interface for index %d is %s ***\n",index,buf);
+       return 0;
+    }
+
+    if(strstr(argv[1],"wifi_setRadioEnable")!=NULL)
+    {
+       bool enable;
+       enable = atoi(argv[3]);
+       wifi_setRadioEnable(index,enable);
+       printf("operation wifi_setRadioEnable is done \n");
+       return 0;
+    }
+//Get operation API's
+    if(strstr(argv[1],"wifi_getRadioEnable")!=NULL)
+    {
+       bool enable = false;
+       bool *output_bool = &enable;
+       wifi_getRadioEnable(index,output_bool);
+       printf("*** Radio enable for index %d is %d *** \n",index,enable);
+       return 0;
+    }
+    if(strstr(argv[1],"wifi_getRadioCountryCode")!=NULL)
+    {
+       char buf[64] = {'\0'};
+       wifi_getRadioCountryCode(index,buf);
+       printf("*** CountryCode is %s ***\n",buf);
+       return 0;
+    }
+
     if(strstr(argv[1], "wifi_getApName")!=NULL)
     {
-        char buf[32]= {'\0'};
+        char buf[16]= {'\0'};
         wifi_getApName(index,buf);
-        printf("Ap name is %s \n",buf);
+        printf("*** Ap name for index %d is %s ***\n",index,buf);
         return 0;
     }
     if(strstr(argv[1], "wifi_getRadioAutoChannelEnable")!=NULL)
@@ -8103,7 +8350,7 @@ int main(int argc,char **argv)
         bool b = false;
         bool *output_bool = &b;
         wifi_getRadioAutoChannelEnable(index,output_bool);
-        printf("Channel enabled = %d \n",b);
+        printf("*** Auto Channel enabled = %d ***\n",b);
         return 0;
     }
     if(strstr(argv[1], "wifi_getApWpaEncryptionMode")!=NULL)
@@ -8118,7 +8365,7 @@ int main(int argc,char **argv)
         bool b = false;
         bool *output_bool = &b;
         wifi_getApSsidAdvertisementEnable(index,output_bool);
-        printf("advertisment enabled =  %d\n",b);
+        printf("*** advertisment enabled for Ap index %d is %d ***\n",index,b);
         return 0;
     }
 

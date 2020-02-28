@@ -340,7 +340,7 @@ static int wifi_hostapdProcessUpdate(int apIndex, struct params *list, int item_
 
     for(i=0; i<item_count; i++, list++)
     {
-        snprintf(cmd, sizeof(cmd), "hostapd_cli -i%s%d SET %s %s", CONFIG_PREFIX, apIndex, list->name, list->value);
+        snprintf(cmd, sizeof(cmd), "hostapd_cli -i%s%d SET %s %s", AP_PREFIX, apIndex, list->name, list->value);
         if((fp = popen(cmd, "r"))==NULL)
         {
             perror("popen failed");
@@ -351,7 +351,7 @@ static int wifi_hostapdProcessUpdate(int apIndex, struct params *list, int item_
             perror("fgets failed");
             return -1;
         }
-        snprintf(cmd, sizeof(cmd), "hostapd_cli -i%s%d RELOAD", CONFIG_PREFIX, apIndex);
+        snprintf(cmd, sizeof(cmd), "hostapd_cli -i%s%d RELOAD", AP_PREFIX, apIndex);
         if((fp = popen(cmd, "r"))==NULL)
         {
             perror("popen failed");

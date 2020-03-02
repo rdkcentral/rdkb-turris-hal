@@ -331,6 +331,41 @@ static int wifi_hostapdWrite(char *conf_file, struct params *list, int item_coun
 
     return 0;
 }
+
+static int wifi_hostapdProcessUpdate(int apIndex, struct params *list, int item_count)
+{
+    char cmd[MAX_CMD_SIZE]="", output[32]="";
+    FILE *fp;
+    int i;
+
+    for(i=0; i<item_count; i++, list++)
+    {
+        snprintf(cmd, sizeof(cmd), "hostapd_cli -i%s%d SET %s %s", AP_PREFIX, apIndex, list->name, list->value);
+        if((fp = popen(cmd, "r"))==NULL)
+        {
+            perror("popen failed");
+            return -1;
+        }
+        if(!fgets(output, sizeof(output), fp) || strncmp(output, "OK", 2))
+        {
+            perror("fgets failed");
+            return -1;
+        }
+        snprintf(cmd, sizeof(cmd), "hostapd_cli -i%s%d RELOAD", AP_PREFIX, apIndex);
+        if((fp = popen(cmd, "r"))==NULL)
+        {
+            perror("popen failed");
+            return -1;
+        }
+        if(!fgets(output, sizeof(output), fp) || strncmp(output, "OK", 2))
+        {
+            perror("fgets failed");
+            return -1;
+        }
+    }
+    return 0;
+}
+
 //For Getting Current Interface Name from corresponding hostapd configuration
 void GetInterfaceName(char *interface_name, char *conf_file)
 {
@@ -2802,7 +2837,8 @@ INT wifi_setSSIDName(INT apIndex, CHAR *ssid_string)
     params.name = "ssid";
     params.value = ssid_string;
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdWrite(config_file,&params,1);
+    wifi_hostapdWrite(config_file, &params, 1);
+    wifi_hostapdProcessUpdate(apIndex, &params, 1);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 
     return RETURN_OK;
@@ -3707,7 +3743,8 @@ INT wifi_setApBeaconType(INT apIndex, CHAR *beaconTypeString)
         list.value="1";
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-    wifi_hostapdWrite(config_file,&list,1);
+    wifi_hostapdWrite(config_file, &list, 1);
+    wifi_hostapdProcessUpdate(apIndex, &list, 1);
     //save the beaconTypeString to wifi config and hostapd config file. Wait for wifi reset or hostapd restart to apply
     return RETURN_OK;
 }
@@ -3822,11 +3859,13 @@ INT wifi_setApWpaEncryptionMode(INT apIndex, CHAR *encMode)
     {
         params.name = "wpa_pairwise";
         sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-        wifi_hostapdWrite(config_file,&params,1);
+        wifi_hostapdWrite(config_file, &params, 1);
+        wifi_hostapdProcessUpdate(apIndex, &params, 1);
 
         params.name,"rsn_pairwise";
         sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-        wifi_hostapdWrite(config_file,&params,1);
+        wifi_hostapdWrite(config_file, &params, 1);
+        wifi_hostapdProcessUpdate(apIndex, &params, 1);
 
         return RETURN_OK;
     }
@@ -3834,14 +3873,16 @@ INT wifi_setApWpaEncryptionMode(INT apIndex, CHAR *encMode)
     {
         params.name = "rsn_pairwise";
         sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-        wifi_hostapdWrite(config_file,&params,1);
+        wifi_hostapdWrite(config_file, &params, 1);
+        wifi_hostapdProcessUpdate(apIndex, &params, 1);
         return RETURN_OK;
     }
     else if((strcmp(output_string,"WPA")==0))
     {
         params.name = "wpa_pairwise";
         sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-        wifi_hostapdWrite(config_file,&params,1);
+        wifi_hostapdWrite(config_file, &params, 1);
+        wifi_hostapdProcessUpdate(apIndex, &params, 1);
         return RETURN_OK;
     }
 
@@ -3900,6 +3941,8 @@ INT wifi_setApBasicAuthenticationMode(INT apIndex, CHAR *authMode)
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
     ret=wifi_hostapdWrite(config_file,&params,1);
+    if(!ret)
+        ret=wifi_hostapdProcessUpdate(apIndex, &params, 1);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 
     return ret;
@@ -4544,6 +4587,7 @@ INT wifi_setApSsidAdvertisementEnable(INT apIndex, BOOL enable)
 
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
     wifi_hostapdWrite(config_file, &list, 1);
+    wifi_hostapdProcessUpdate(apIndex, &list, 1);
     //TODO: call hostapd_cli for dynamic_config_control
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 
@@ -4834,7 +4878,7 @@ INT wifi_getApSecurityPreSharedKey(INT apIndex, CHAR *output_string)
 
 // sets an enviornment variable for the psk. Input string preSharedKey must be a maximum of 64 characters
 // PSK Key of 8 to 63 characters is considered an ASCII string, and 64 characters are considered as HEX value
-INT wifi_setApSecurityPreSharedKey(INT apIndex, CHAR *preSharedKey)        
+INT wifi_setApSecurityPreSharedKey(INT apIndex, CHAR *preSharedKey)
 {
     //save to wifi config and hotapd config. wait for wifi reset or hostapd restet to apply
     struct params params={'\0'};
@@ -4851,13 +4895,12 @@ INT wifi_setApSecurityPreSharedKey(INT apIndex, CHAR *preSharedKey)
         wifi_dbg_printf("\nCannot Set Preshared Key length of preshared key should be 8 to 63 chars\n");
         return RETURN_ERR;
     }
-    else
-    {
-        params.value = preSharedKey;
-        sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
-        ret=wifi_hostapdWrite(config_file,&params,1);
-        return ret;
-    }
+    params.value = preSharedKey;
+    sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
+    ret = wifi_hostapdWrite(config_file, &params, 1);
+    if(!ret)
+        ret = wifi_hostapdProcessUpdate(apIndex, &params, 1);
+    return ret;
     //TODO: call hostapd_cli for dynamic_config_control
 }
 
@@ -4905,6 +4948,8 @@ INT wifi_setApSecurityKeyPassphrase(INT apIndex, CHAR *passPhrase)
     params.value = passPhrase;
     sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
     ret=wifi_hostapdWrite(config_file,&params,1);
+    if(!ret)
+        wifi_hostapdProcessUpdate(apIndex, &params, 1);
 
     return ret;
 }

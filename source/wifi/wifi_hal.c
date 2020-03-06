@@ -49,14 +49,14 @@
 #define CONFIG_PREFIX "/nvram/hostapd"
 #define ACL_PREFIX "/tmp/hostapd-acl"
 //#define ACL_PREFIX "/tmp/wifi_acl_list" //RDKB convention
-#define SOCK_PREFIX "/var/run/hostapd/wlan"
+#define SOCK_PREFIX "/var/run/hostapd/wifi"
 
 #ifndef AP_PREFIX
-#define AP_PREFIX	"wlan"
+#define AP_PREFIX	"wifi"
 #endif
 
 #ifndef RADIO_PREFIX
-#define RADIO_PREFIX	"wlan"
+#define RADIO_PREFIX	"wifi"
 #endif
 
 #define MAX_BUF_SIZE 128
@@ -1068,33 +1068,6 @@ INT wifi_getRadioEnable(INT radioIndex, BOOL *output_bool)      //RDKB
     return RETURN_OK;
 }
 
-#if 0
-//Get the Radio enable config parameter
-INT wifi_getRadioEnable(INT radioIndex, BOOL *output_bool)	//RDKB
-{
-    char cmd[MAX_CMD_SIZE]={'\0'};
-    char buf[MAX_BUF_SIZE]={'\0'};
-    INT  wlanIndex;
-
-    if( 0 == radioIndex ) // For 2.4 GHz
-        wlanIndex = wifi_getApIndexForWiFiBand(band_2_4);
-    else
-        wlanIndex = wifi_getApIndexForWiFiBand(band_5);
-
-    if (NULL == output_bool) 
-    {
-        return RETURN_ERR;
-    } else {
-        sprintf(cmd,"ifconfig|grep wlan%d", wlanIndex);
-        _syscmd(cmd,buf,sizeof(buf));
-        if(strlen(buf)>0)
-            *output_bool=1;
-        else
-            *output_bool=0;
-        return RETURN_OK;
-    }
-}
-#endif
 INT wifi_setRadioEnable(INT radioIndex, BOOL enable)            //RDKB
 {
     char IfName[MAX_BUF_SIZE]={'\0'};
@@ -1196,32 +1169,6 @@ INT wifi_setRadioEnable(INT radioIndex, BOOL enable)            //RDKB
     }
     return RETURN_OK;
 }
-#if 0
-//Set the Radio enable config parameter
-INT wifi_setRadioEnable(INT radioIndex, BOOL enable)		//RDKB
-{
-    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    char cmd[MAX_CMD_SIZE]={'\0'};
-    char buf[MAX_BUF_SIZE]={'\0'};
-    INT  wlanIndex;
-
-    if( 0 == radioIndex ) // For 2.4 GHz
-        wlanIndex = wifi_getApIndexForWiFiBand(band_2_4);
-    else
-        wlanIndex = wifi_getApIndexForWiFiBand(band_5);
-
-    if(enable == TRUE)
-        sprintf(cmd,"ifconfig wlan%d up", wlanIndex);
-    else
-        sprintf(cmd,"ifconfig wlan%d down", wlanIndex);
-
-    wifi_dbg_printf("\ncmd=%s",cmd);
-    _syscmd(cmd,buf,sizeof(buf));
-    //Set wifi config. Wait for wifi reset to apply
-    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-    return RETURN_OK;
-}
-#endif
 
 //Get the Radio enable status
 INT wifi_getRadioStatus(INT radioIndex, BOOL *output_bool)	//RDKB
@@ -3292,7 +3239,7 @@ INT wifi_getAssociatedDeviceDetail(INT apIndex, INT devIndex, wifi_device_t *out
     wifi_device_info_t info;
     info.wifi_devIndex = devIndex;
 
-    snprintf(if_name,sizeof(if_name),"wlan%d",apIndex);
+    snprintf(if_name,sizeof(if_name),"%s%d", AP_PREFIX, apIndex);
 
     nl.id = initSock80211(&nl);
 
@@ -3344,7 +3291,7 @@ INT wifi_getAssociatedDeviceDetail(INT apIndex, INT devIndex, wifi_device_t *out
     char line[256];
     int count,device = 0;
 
-    snprintf(if_name,sizeof(if_name),"wlan%d",apIndex);
+    snprintf(if_name,sizeof(if_name),"%s%d", AP_PREFIX, apIndex);
 
     sprintf(pipeCmd, "iw dev %s station dump | grep %s | wc -l", if_name, if_name);
     file = popen(pipeCmd, "r");
@@ -4376,38 +4323,9 @@ INT wifi_startHostApd()
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
     return RETURN_OK;
     //sprintf(cmd, "hostapd  -B `cat /tmp/conf_filename` -e /nvram/etc/wpa2/entropy -P /tmp/hostapd.pid 1>&2");
-#if 0
-    //TODO: need to revisit below implementation
-    char cmd[128] = {0};
-    char buf[1028] = {0};
-
-    _syscmd("iwconfig wlan0|grep 802.11a",buf,sizeof(buf));
-    if(strlen(buf) > 0)
-    {
-        system("sed -i 's/interface=wlan0/interface=wlan1/g' /nvram/hostapd0.conf");
-        system("sed -i 's/interface=wlan1/interface=wlan0/g' /nvram/hostapd1.conf");
-        _syscmd("hostapd -B /nvram/hostapd0.conf /nvram/hostapd1.conf",buf,sizeof(buf));
-    }
-    else
-    {
-        system("sed -i 's/interface=wlan1/interface=wlan0/g' /nvram/hostapd0.conf");
-        system("sed -i 's/interface=wlan0/interface=wlan1/g' /nvram/hostapd1.conf");
-        memset(buf,'\0',sizeof(buf));
-        _syscmd("iwconfig wlan1",buf,sizeof(buf));
-        if(strlen(buf)== 0)
-        {	
-            _syscmd("hostapd -B /nvram/hostapd0.conf",buf,sizeof(buf));
-        }
-        else
-        {
-            _syscmd("hostapd -B /nvram/hostapd0.conf /nvram/hostapd1.conf",buf,sizeof(buf));
-        }
-    }
-#endif
 }
 
-
- // stops hostapd	
+// stops hostapd
 INT wifi_stopHostApd()                                        
 {
     char cmd[128] = {0};
@@ -4530,31 +4448,6 @@ INT wifi_getApStatus(INT apIndex, CHAR *output_string)
 
     return RETURN_OK;
 }
-
-#if 0
-// Outputs the AP "Enabled" "Disabled" status from driver 
-INT wifi_getApStatus(INT apIndex, CHAR *output_string) 
-{
-    char cmd[128] = {0};
-    char buf[128] = {0};
-    INT  wlanIndex;
-
-
-    if( 0 == apIndex ) // For 2.4 GHz
-        wlanIndex = wifi_getApIndexForWiFiBand(band_2_4);
-    else
-        wlanIndex = wifi_getApIndexForWiFiBand(band_5);
-
-    sprintf(cmd,"iwconfig  | grep wlan%d", wlanIndex);
-    _syscmd(cmd, buf, sizeof(buf));
-
-    if(strlen(buf)>3)
-        snprintf(output_string, 32, "Up");
-    else
-        snprintf(output_string, 32, "Disable");
-    return RETURN_OK;
-}
-#endif
 
 //Indicates whether or not beacons include the SSID name.
 // outputs a 1 if SSID on the AP is enabled, else ouputs 0
@@ -6419,26 +6312,6 @@ INT wifi_setRouterEnable(INT wlanIndex, INT *RouterEnabled)
    return RETURN_OK;
 }
 
-INT wifi_getApIndexForWiFiBand(wifi_band band)
-{
-    char cmd[128] = {0};
-    char buf[1028] = {0};
-    int  apIndex = -1;
-
-    _syscmd("iwconfig wlan0|grep 802.11a", buf, sizeof(buf));
-    if( strlen(buf) > 0 )
-    {
-        apIndex = ( band_2_4 == band ) ? 1: 0;
-    }
-    else
-    {
-        apIndex = ( band_2_4 == band ) ? 0 : 1;
-    }
-
-    wifi_dbg_printf("AP Index for band %d is %d", band, apIndex );
-    return apIndex;
-}
-
 INT wifi_getRadioSupportedDataTransmitRates(INT wlanIndex,CHAR *output)
 {
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
@@ -6590,7 +6463,7 @@ static INT chan_to_freq(int radioIndex, UINT channel, int *freq)
 
 INT wifi_pushRadioChannel2(INT radioIndex, UINT channel, UINT channel_width_MHz, UINT csa_beacon_count)
 {
-    //Sample command: "hostapd_cli -i wlan0 chan_switch 30 2.437"
+    //Sample command: "hostapd_cli -i wifi0 chan_switch 30 2.437"
     char cmd[MAX_CMD_SIZE] = {0};
     char buf[MAX_BUF_SIZE] = {0};
     int freq =0, ret = 0;
@@ -7154,7 +7027,7 @@ INT wifi_getApAssociatedDeviceTidStatsResult(INT radioIndex,  mac_address_t *cli
     char  if_name[10];
     char mac_addr[MAC_ALEN];
 
-    snprintf(if_name,sizeof(if_name),"wlan%d",radioIndex);
+    snprintf(if_name, sizeof(if_name), "%s%d", AP_PREFIX, radioIndex);
 
     nl.id = initSock80211(&nl);
 
@@ -7207,7 +7080,7 @@ INT wifi_getApAssociatedDeviceTidStatsResult(INT radioIndex,  mac_address_t *cli
 
     wifi_associated_dev_tid_entry_t *stats_entry;
 
-    snprintf(if_name,sizeof(if_name),"wlan%d",radioIndex);
+    snprintf(if_name, sizeof(if_name), "%s%d", AP_PREFIX, radioIndex);
     strcpy(mac_addr,clientMacAddress);
 
     snprintf(pipeCmd,sizeof(pipeCmd),"iw dev %s station dump -v > "TID_STATS_FILE,if_name);
@@ -7428,7 +7301,7 @@ INT wifi_getApAssociatedDeviceRxStatsResult(INT radioIndex, mac_address_t *clien
     char phy_addr[MAC_ALEN];
     char if_name[10];
 
-    snprintf(if_name,sizeof(if_name),"wlan%d",radioIndex);
+    snprintf(if_name, sizeof(if_name), "%s%d", AP_PREFIX, radioIndex);
     nl.id = initSock80211(&nl);
 
     if (nl.id < 0) {
@@ -7571,7 +7444,7 @@ INT wifi_getApAssociatedDeviceTxStatsResult(INT radioIndex, mac_address_t *clien
     char mac_addr[MAC_ALEN];
     char if_name[10];
 
-    snprintf(if_name,sizeof(if_name),"wlan%d",radioIndex);
+    snprintf(if_name, sizeof(if_name), "%s%d", AP_PREFIX, radioIndex);
 
     nl.id = initSock80211(&nl);
 
@@ -7743,7 +7616,7 @@ INT wifi_getRadioChannelStats(INT radioIndex,wifi_channelStats_t *input_output_c
 
     local[0].array_size = array_size;
 
-    snprintf(if_name,sizeof(if_name),"wlan%d",radioIndex);
+    snprintf(if_name, sizeof(if_name), "%s%d", AP_PREFIX, radioIndex);
 
     nl.id = initSock80211(&nl);
 

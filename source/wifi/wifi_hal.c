@@ -7983,10 +7983,93 @@ INT wifi_getRadioBandUtilization (INT radioIndex, INT *output_percentage)
 {
     return RETURN_OK;
 }
+
 INT wifi_getApAssociatedClientDiagnosticResult(INT apIndex, char *mac_addr, wifi_associated_dev3_t *dev_conn)
 {
     return RETURN_OK;
 }
+
+#ifdef _TURRIS_EXTENDER_
+/* client API */
+INT wifi_getSTANumberOfEntries(ULONG *output) //Tr181
+{
+    if (NULL == output)
+        return RETURN_ERR;
+
+    *output = 2;
+    return RETURN_OK;
+}
+
+INT wifi_getSTAName(INT apIndex, CHAR *output_string)
+{
+    if (NULL == output_string)
+        return RETURN_ERR;
+    if(apIndex == 0)
+        snprintf(output_string, 16, "bhaul-sta-24");
+    else
+        snprintf(output_string, 16, "bhaul-sta-50");
+
+    return RETURN_OK;
+}
+
+INT wifi_getSTARadioIndex(INT ssidIndex, INT *radioIndex)
+{
+    if (NULL == radioIndex)
+        return RETURN_ERR;
+    *radioIndex = ssidIndex%2;
+    return RETURN_OK;
+}
+
+INT wifi_getSTAMAC(INT ssidIndex, CHAR *output_string)
+{
+    char cmd[128] = {0};
+    int ret = 0;
+    char ssid_ifname[128];
+
+    if (NULL == output_string)
+        return RETURN_ERR;
+
+    ret = wifi_getSTAName(ssidIndex, ssid_ifname);
+    if (ret != RETURN_OK)
+    {
+        return RETURN_ERR;
+    }
+
+    sprintf(cmd, "wpa_cli -i%s status |grep '^address' | cut -f 2 -d =", ssid_ifname);
+    _syscmd(cmd, output_string, 64);
+
+    return RETURN_OK;
+
+}
+
+INT wifi_getSTABSSID(INT ssidIndex, CHAR *output_string)
+{
+    char cmd[128] = {0};
+    int ret = 0;
+    char ssid_ifname[128];
+
+    if (NULL == output_string)
+        return RETURN_ERR;
+
+    ret = wifi_getSTAName(ssidIndex, ssid_ifname);
+    if (ret != RETURN_OK)
+    {
+        return RETURN_ERR;
+    }
+
+    sprintf(cmd, "wpa_cli -i%s status |grep bssid | cut -f 2 -d =", ssid_ifname);
+    _syscmd(cmd, output_string, 64);
+
+    return RETURN_OK;
+
+}
+
+INT wifi_getSTANetworks(INT apIndex, wifi_staNetwork_t **out_staNetworks_array, INT out_array_size, BOOL *out_scan_cur_freq)
+{
+    return RETURN_OK;
+}
+#endif
+
 #ifdef _WIFI_HAL_TEST_
 int main(int argc,char **argv)
 {
@@ -8162,4 +8245,3 @@ int main(int argc,char **argv)
 
 #endif
 //<<
-

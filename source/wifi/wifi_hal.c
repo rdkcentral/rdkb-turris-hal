@@ -6591,7 +6591,7 @@ INT wifi_getSSIDNameStatus(INT apIndex, CHAR *output_string)
     if (NULL == output_string)
         return RETURN_ERR;
 
-    snprintf(cmd, sizeof(cmd), "iw dev %s%d info | grep ssid |  awk '{printf $2}'", AP_PREFIX,apIndex);
+    snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d get_config | grep ^ssid | cut -d '=' -f2", AP_PREFIX,apIndex);
     _syscmd(cmd, buf, sizeof(buf));
 
     //size of SSID name restricted to value less than 32 bytes
@@ -8122,7 +8122,6 @@ int main(int argc,char **argv)
         printf("advertisment enabled =  %d\n",b);
         return 0;
     }
-
     if(strstr(argv[1],"wifi_getApAssociatedDeviceTidStatsResult")!=NULL)
     {
         printf("arguments are %s %s %s \n", argv[1],argv[2],argv[3]);
@@ -8158,6 +8157,13 @@ int main(int argc,char **argv)
         char status[64]; 
         ret=wifi_getApStatus(index, status);
         printf("%s %d: %s, returns %d\n", argv[1], index, status, ret);
+    }
+    else if(strstr(argv[1], "wifi_getSSIDNameStatus")!=NULL)
+    {
+        char buf[32] = {'\0'};
+        wifi_getSSIDNameStatus(index,buf);
+        printf("%s %d: active ssid : %s\n",argv[1], index,buf);
+        return 0;
     }
     else if(strstr(argv[1], "getSSIDTrafficStats2")!=NULL) {
         wifi_ssidTrafficStats2_t stats={0};

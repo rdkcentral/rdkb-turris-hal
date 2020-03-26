@@ -17,6 +17,12 @@
  * limitations under the License.
 */
 
+/*
+* Material from the TR181 data model is Copyright (c) 2010-2017, Broadband Forum
+* Licensed under the BSD-3 license
+*/
+
+
 #define HAL_NETLINK_IMPL
 
 #include <stdio.h>

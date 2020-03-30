@@ -7995,6 +7995,12 @@ INT wifi_getApAssociatedClientDiagnosticResult(INT apIndex, char *mac_addr, wifi
     return RETURN_OK;
 }
 
+INT wifi_switchBand(char *interface_name,INT radioIndex,char *freqBand)
+{
+    // TODO API refrence Implementaion is present on RPI hal
+    return RETURN_ERR;
+}
+
 #ifdef _TURRIS_EXTENDER_
 /* client API */
 INT wifi_getSTANumberOfEntries(ULONG *output) //Tr181

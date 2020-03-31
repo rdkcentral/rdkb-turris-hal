@@ -1013,6 +1013,11 @@ INT wifi_getRadioCountryCode(INT radioIndex, CHAR *output_string)
 {
     if (NULL == output_string)
         return RETURN_ERR;
+#ifdef _TURRIS_EXTENDER_
+    //WORKAROUND: returning "705"(SI) country code for extender device for now
+    snprintf(output_string, 64, "705");
+    return RETURN_OK;
+#endif
     snprintf(output_string, 64, "841");
 
     return RETURN_OK;

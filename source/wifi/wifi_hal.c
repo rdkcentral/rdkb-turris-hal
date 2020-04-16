@@ -68,7 +68,8 @@
 #define MAX_BUF_SIZE 128
 #define MAX_CMD_SIZE 1024
 
-#define WIFI_DEBUG 
+//Uncomment to enable debug logs
+//#define WIFI_DEBUG
 
 #ifdef WIFI_DEBUG
 #define wifi_dbg_printf printf

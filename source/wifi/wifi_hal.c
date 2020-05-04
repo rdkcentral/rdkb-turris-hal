@@ -3640,7 +3640,7 @@ INT wifi_getApName(INT apIndex, CHAR *output_string)
 }
 
 // Outputs the index number in that corresponds to the SSID string
-INT wifi_getIndexFromName(CHAR *inputSsidString, INT *ouput_int)
+INT wifi_getApIndexFromName(CHAR *inputSsidString, INT *ouput_int)
 {
     CHAR *pos=NULL;
 

@@ -7656,7 +7656,7 @@ INT wifi_getRadioChannelStats(INT radioIndex,wifi_channelStats_t *input_output_c
     nlmsg_free(msg);
     nlfree(&nl);
     //Copying the Values
-    for(int i=0;i<=array_size;i++)
+    for(int i=0;i<array_size;i++)
     {
         input_output_channelStats_array[i].ch_number = local[i].ch_number;
         input_output_channelStats_array[i].ch_noise = local[i].ch_noise;
@@ -8096,7 +8096,11 @@ int main(int argc,char **argv)
 
         exit(-1);
     } 
-
+    if(strstr(argv[1], "help")!=NULL)
+    {
+        printf("wifihal <API> <radioIndex> <arg1> <arg2> \n");
+        exit(-1);
+    }
     if(strstr(argv[1], "init")!=NULL) {
         return wifi_init();
     }
@@ -8137,8 +8141,7 @@ int main(int argc,char **argv)
     }
     if(strstr(argv[1],"wifi_getApAssociatedDeviceTidStatsResult")!=NULL)
     {
-        printf("arguments are %s %s %s \n", argv[1],argv[2],argv[3]);
-        if(argc < 3 )
+        if(argc <= 3 )
         {
             printf("Insufficient arguments \n");
             exit(-1);
@@ -8258,6 +8261,37 @@ int main(int argc,char **argv)
         if(associated_dev_array)
             free(associated_dev_array); //make sure to free the list
     }
+
+    if(strstr(argv[1],"wifi_getRadioChannelStats")!=NULL)
+    {
+        if(argc <= 3 )
+        {
+            printf("Insufficient arguments \n");
+            exit(-1);
+        }
+        int array_size = atoi(argv[3]);;
+        wifi_channelStats_t input_output_channelStats_array[array_size];
+        wifi_getRadioChannelStats(index,input_output_channelStats_array,array_size);
+        for(int ch_num=0;ch_num< array_size; ch_num++)
+        printf("chan num = %d \t, noise =%d\t ch_utilization_busy_rx = %lld \t,ch_utilization_busy_tx = %lld \t,ch_utilization_busy = %lld \t, ch_utilization_busy_ext = %lld \t, ch_utilization_total = %lld \t \n",input_output_channelStats_array[ch_num].ch_number,input_output_channelStats_array[ch_num].ch_noise,input_output_channelStats_array[ch_num].ch_utilization_busy_rx,input_output_channelStats_array[ch_num].ch_utilization_busy_tx,input_output_channelStats_array[ch_num].ch_utilization_busy,input_output_channelStats_array[ch_num].ch_utilization_busy_ext,input_output_channelStats_array[ch_num].ch_utilization_total);
+    }
+
+    if(strstr(argv[1],"wifi_getAssociatedDeviceDetail")!=NULL)
+    {
+        if(argc <= 3 )
+        {
+            printf("Insufficient arguments \n");
+            exit(-1);
+        }
+        char mac_addr[20] = {'\0'};
+        wifi_device_t output_struct;
+        int dev_index = atoi(argv[3]);
+
+        wifi_getAssociatedDeviceDetail(index,dev_index,&output_struct);
+        mac_addr_ntoa(mac_addr,output_struct.wifi_devMacAddress);
+        printf("wifi_devMacAddress=%s \t wifi_devAssociatedDeviceAuthentiationState=%d \t, wifi_devSignalStrength=%d \t,wifi_devTxRate=%d \t, wifi_devRxRate =%d \t\n ", mac_addr,output_struct.wifi_devAssociatedDeviceAuthentiationState,output_struct.wifi_devSignalStrength,output_struct.wifi_devTxRate,output_struct.wifi_devRxRate);
+    }
+
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
     return 0;
 }

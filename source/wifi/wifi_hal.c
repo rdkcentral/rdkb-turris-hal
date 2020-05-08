@@ -6778,9 +6778,7 @@ INT wifi_getSSIDTrafficStats2(INT ssidIndex,wifi_ssidTrafficStats2_t *output_str
 {
 #if 0
     /*char buf[1024] = {0};
-
     sprintf(cmd, "ifconfig %s%d ", AP_PREFIX, ssidIndex);
-
     _syscmd(cmd, buf, sizeof(buf));*/
 
     output_struct->ssid_BytesSent = 2048;   //The total number of bytes transmitted out of the interface, including framing characters.

@@ -7303,6 +7303,8 @@ static int rxStatsInfo_callback(struct nl_msg *msg, void *arg) {
 
 INT wifi_getApAssociatedDeviceRxStatsResult(INT radioIndex, mac_address_t *clientMacAddress, wifi_associated_dev_rate_info_rx_stats_t **stats_array, UINT *output_array_size, ULLONG *handle)
 {
+    if(radioIndex >=4)
+        return RETURN_ERR;
 #ifdef HAL_NETLINK_IMPL
     Netlink nl;
     char phy_addr[MAC_ALEN];
@@ -7429,7 +7431,7 @@ static int txStatsInfo_callback(struct nl_msg *msg, void *arg) {
 
     //Assigning  0 for mpdus and ppdus , as we do not have attributes in netlink
         ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->mpdus = 0;
-        ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->mpdus = 0;
+        ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->ppdus = 0;
 
     if(stats_info[NL80211_TID_STATS_TX_MSDU])
         ((wifi_associated_dev_rate_info_tx_stats_t*)arg)->msdus = nla_get_u64(stats_info[NL80211_TID_STATS_TX_MSDU]);
@@ -7446,6 +7448,8 @@ static int txStatsInfo_callback(struct nl_msg *msg, void *arg) {
 
 INT wifi_getApAssociatedDeviceTxStatsResult(INT radioIndex, mac_address_t *clientMacAddress, wifi_associated_dev_rate_info_tx_stats_t **stats_array, UINT *output_array_size, ULLONG *handle)
 {
+    if(radioIndex >=4)
+        return RETURN_ERR;
 #ifdef HAL_NETLINK_IMPL
     Netlink nl;
     char mac_addr[MAC_ALEN];
@@ -8290,6 +8294,40 @@ int main(int argc,char **argv)
         wifi_getAssociatedDeviceDetail(index,dev_index,&output_struct);
         mac_addr_ntoa(mac_addr,output_struct.wifi_devMacAddress);
         printf("wifi_devMacAddress=%s \t wifi_devAssociatedDeviceAuthentiationState=%d \t, wifi_devSignalStrength=%d \t,wifi_devTxRate=%d \t, wifi_devRxRate =%d \t\n ", mac_addr,output_struct.wifi_devAssociatedDeviceAuthentiationState,output_struct.wifi_devSignalStrength,output_struct.wifi_devTxRate,output_struct.wifi_devRxRate);
+    }
+
+    if(strstr(argv[1],"wifi_getApAssociatedDeviceRxStatsResult")!=NULL)
+    {
+        if(argc <= 3 )
+        {
+            printf("Insufficient arguments \n");
+            exit(-1);
+        }
+        mac_address_t *st;
+        int output_array_size = 0;
+        u64 handle= 0;
+        wifi_associated_dev_rate_info_rx_stats_t stats_array;
+        st = argv[3];
+        wifi_getApAssociatedDeviceRxStatsResult(index,st,&stats_array,output_array_size,handle);
+        printf("RX results:\nbytes= %llu \n msdu = %llu\n mpdu=%lld\n ppdu=%lld\n retries=%lld\n  nss=%d\n mcs=%d \n bw=%d\n rssi_combined =%d \n",stats_array.bytes,stats_array.msdus,stats_array.mpdus,stats_array.ppdus,stats_array.retries,stats_array.nss,stats_array.mcs,stats_array.bw,stats_array.rssi_combined);
+        return 0;
+    }
+
+    if(strstr(argv[1],"wifi_getApAssociatedDeviceTxStatsResult")!=NULL)
+    {
+        if(argc <= 3 )
+        {
+            printf("Insufficient arguments \n");
+            exit(-1);
+        }
+        mac_address_t *st;
+        int output_array_size = 0;
+        u64 handle= 0;
+        wifi_associated_dev_rate_info_tx_stats_t stats_array;
+        st = argv[3];
+        wifi_getApAssociatedDeviceTxStatsResult(index,st,&stats_array,output_array_size,handle);
+        printf("TX results:\nbytes= %llu \n msdu = %llu\n mpdu=%lld\n ppdu=%lld\n retries=%lld\n nss=%d\n attempts=%lld\n mcs=%d \n bw=%d\n",stats_array.bytes,stats_array.msdus,stats_array.mpdus,stats_array.ppdus,stats_array.retries,stats_array.nss,stats_array.attempts,stats_array.mcs,stats_array.bw);
+        return 0;
     }
 
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);

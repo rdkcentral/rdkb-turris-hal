@@ -6598,7 +6598,7 @@ INT wifi_getSSIDNameStatus(INT apIndex, CHAR *output_string)
     if (NULL == output_string)
         return RETURN_ERR;
 
-    snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d get_config | grep ^ssid | cut -d '=' -f2", AP_PREFIX,apIndex);
+    snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d get_config | grep ^ssid | cut -d '=' -f2 | tr -d '\n'", AP_PREFIX,apIndex);
     _syscmd(cmd, buf, sizeof(buf));
 
     //size of SSID name restricted to value less than 32 bytes
@@ -6776,11 +6776,9 @@ INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex,wifi_associated_dev2
 
 INT wifi_getSSIDTrafficStats2(INT ssidIndex,wifi_ssidTrafficStats2_t *output_struct)
 {
-    char cmd[128] = {0};
+#if 0
     /*char buf[1024] = {0};
-
     sprintf(cmd, "ifconfig %s%d ", AP_PREFIX, ssidIndex);
-
     _syscmd(cmd, buf, sizeof(buf));*/
 
     output_struct->ssid_BytesSent = 2048;   //The total number of bytes transmitted out of the interface, including framing characters.
@@ -6806,9 +6804,8 @@ INT wifi_getSSIDTrafficStats2(INT ssidIndex,wifi_ssidTrafficStats2_t *output_str
     output_struct->ssid_BroadcastPacketsSent = 0;  //The total number of packets that higher-level protocols requested for transmission and which were addressed to a broadcast address at this layer, including those that were discarded or not sent.
     output_struct->ssid_BroadcastPacketsRecevied = 1; //The total number of packets that higher-level protocols requested for transmission and which were addressed to a broadcast address at this layer, including those that were discarded or not sent.
     output_struct->ssid_UnknownPacketsReceived = 0;  //The total number of packets received via the interface which were discarded because of an unknown or unsupported protocol.
+#endif
 
-#if 0
-    //TODO: need to revisit below implementation
     FILE *fp = NULL;
     char HConf_file[MAX_BUF_SIZE] = {'\0'};
     char interface_name[50] = {0};
@@ -6819,33 +6816,41 @@ INT wifi_getSSIDTrafficStats2(INT ssidIndex,wifi_ssidTrafficStats2_t *output_str
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     if (!output_struct)
         return RETURN_ERR;
+
+    if (ssidIndex >= 4)
+        return RETURN_ERR;
+
     sprintf(HConf_file,"%s%d%s","/nvram/hostapd",ssidIndex,".conf");
     GetInterfaceName(interface_name,HConf_file);
-    sprintf(pipeCmd,"%s%s%s","cat /proc/net/dev | grep ",interface_name," |  tr -s ' '  | sed 's/ /,/g' | sed 's/,$/ /g' | cut -d  ' ' -f11");
+    sprintf(pipeCmd,"%s%s%s","cat /proc/net/dev | grep ",interface_name," |  tr -s ' '  | cut -d  ' ' -f11 | tr -d '\n'");
     fp = popen(pipeCmd, "r");
+    fgets(str, MAX_BUF_SIZE,fp);
     out->ssid_BytesSent = atol(str);
 
-    sprintf(pipeCmd,"%s%s%s","cat /proc/net/dev | grep ",interface_name," |  tr -s ' '  | sed 's/ /,/g' | sed 's/,$/ /g' | cut -d  ' ' -f3");
+    sprintf(pipeCmd,"%s%s%s","cat /proc/net/dev | grep ",interface_name," |  tr -s ' '  | cut -d  ' ' -f3 | tr -d '\n'");
     fp = popen(pipeCmd, "r");
+    fgets(str, MAX_BUF_SIZE,fp);
     out->ssid_BytesReceived = atol(str);
 
 
-    sprintf(pipeCmd,"%s%s%s","cat /proc/net/dev | grep ",interface_name," |  tr -s ' '  | sed 's/ /,/g' | sed 's/,$/ /g' | cut -d  ' ' -f12");
+    sprintf(pipeCmd,"%s%s%s","cat /proc/net/dev | grep ",interface_name," |  tr -s ' '  | cut -d  ' ' -f12 | tr -d '\n'");
     fp = popen(pipeCmd, "r");
+    fgets(str, MAX_BUF_SIZE,fp);
     out->ssid_PacketsSent = atol(str);
 
-    sprintf(pipeCmd,"%s%s%s","cat /proc/net/dev | grep ",interface_name," |  tr -s ' '  | sed 's/ /,/g' | sed 's/,$/ /g' | cut -d  ' ' -f4");
+    sprintf(pipeCmd,"%s%s%s","cat /proc/net/dev | grep ",interface_name," |  tr -s ' '  | cut -d  ' ' -f4 | tr -d '\n'");
     fp = popen(pipeCmd, "r");
+    fgets(str, MAX_BUF_SIZE,fp);
     out->ssid_PacketsReceived = atol(str);
     /*
+       //TODO:
        out->ssid_UnicastPacketsSent        = uni->ims_tx_data_packets;
        out->ssid_UnicastPacketsReceived    = uni->ims_rx_data_packets;
        out->ssid_MulticastPacketsSent      = multi->ims_tx_data_packets - multi->ims_tx_bcast_data_packets;
        out->ssid_MulticastPacketsReceived  = multi->ims_rx_data_packets - multi->ims_rx_bcast_data_packets;
        out->ssid_BroadcastPacketsSent      = multi->ims_tx_bcast_data_packets;
        out->ssid_BroadcastPacketsRecevied  = multi->ims_rx_bcast_data_packets; 
-     */
-#endif
+    */
     return RETURN_OK;
 }
 

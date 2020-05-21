@@ -6670,7 +6670,8 @@ INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex,wifi_associated_dev2
     else
     {
         wifi_associated_dev2_t* temp = NULL;
-        temp = (wifi_associated_dev2_t*)calloc(1, sizeof(wifi_associated_dev2_t)*wifi_count) ;
+        temp = (wifi_associated_dev2_t*)calloc(wifi_count, sizeof(wifi_associated_dev2_t));
+        *associated_dev_array = temp;
         if(temp == NULL)
         {
             printf("Error Statement. Insufficient memory \n");

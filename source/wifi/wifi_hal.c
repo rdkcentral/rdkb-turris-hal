@@ -62,7 +62,7 @@
 #endif
 
 #ifndef RADIO_PREFIX
-#define RADIO_PREFIX	"wifi"
+#define RADIO_PREFIX	"wlan"
 #endif
 
 #define MAX_BUF_SIZE 128
@@ -6487,46 +6487,109 @@ INT wifi_pushRadioChannel2(INT radioIndex, UINT channel, UINT channel_width_MHz,
     return RETURN_OK;
 }
 
-INT wifi_getNeighboringWiFiStatus(INT apIndex, wifi_neighbor_ap2_t **neighbor_ap_array, UINT *output_array_size)
+INT wifi_getNeighboringWiFiStatus(INT radio_index, wifi_neighbor_ap2_t **neighbor_ap_array, UINT *output_array_size)
 {
     char cmd[1024] =  {0};
     char buf[1024] = {0};
-    char tmp_buf[1024] = {0};
-
-    char HConf_file[MAX_BUF_SIZE] = {'\0'};
-    int count = 0;
-    char interface_name[50] = {0};
-
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    *neighbor_ap_array = NULL;
-    *output_array_size = 0;
     wifi_neighbor_ap2_t *scan_array = NULL;
     int scan_count=0;
+    int i =0;
+    int freq=0;
+    size_t len=0;
+    FILE *f = NULL;
+    ssize_t read = 0;
+    char *line =NULL;
+    char radio_ifname[64];
+    char secondary_chan[64];
+    int vht_channel_width = 0;
+
+    if(wifi_getRadioIfName(radio_index,radio_ifname)!=RETURN_OK)
+        return RETURN_ERR;
+
+    /* sched_start is not supported on open source ath9k ath10k firmware
+     * Using active scan as a workaround */
+    sprintf(cmd,"iw dev %s scan |grep '^BSS\\|SSID:\\|freq:\\|signal:\\|HT operation:\\|secondary channel offset:\\|* channel width:'", radio_ifname);
+    if((f = popen(cmd, "r")) == NULL) {
+        wifi_dbg_printf("%s: popen %s error\n", __func__, cmd);
+        return RETURN_ERR;
+    }
+    read = getline(&line, &len, f);
+    while (read  != -1) {
+        if(strncmp(line,"BSS",3) == 0) {
+            i = scan_count;
+            scan_count++;
+            scan_array = realloc(scan_array,sizeof(wifi_neighbor_ap2_t)*scan_count);
+            memset(&(scan_array[i]),0, sizeof(wifi_neighbor_ap2_t));
+            sscanf(line,"BSS %17s", &(scan_array[i].ap_BSSID));
+
+            read = getline(&line, &len, f);
+            sscanf(line,"	freq: %d", &freq);
+            scan_array[i].ap_Channel = ieee80211_frequency_to_channel(freq);
+
+            read = getline(&line, &len, f);
+            sscanf(line,"	signal: %d", &(scan_array[i].ap_SignalStrength));
+
+            read = getline(&line, &len, f);
+            sscanf(line,"	SSID: %s", &(scan_array[i].ap_SSID));
+            wifi_dbg_printf("%s:Discovered BSS %s, %d, %d , %s\n", __func__, scan_array[i].ap_BSSID, scan_array[i].ap_Channel,scan_array[i].ap_SignalStrength, scan_array[i].ap_SSID);
+            read = getline(&line, &len, f);
+            if(strncmp(line,"BSS",3)==0) {
+                // No HT and no VHT => 20Mhz
+                sprintf(&(scan_array[i].ap_OperatingChannelBandwidth),"11%s", radio_index%1 ? "A": "G");
+                continue;
+            }
+            if(strncmp(line,"	HT operation:",14)!= 0) {
+                    wifi_dbg_printf("HT output parsing error (%s)\n", line);
+                    goto output_error;
+            }
+
+            read = getline(&line, &len, f);
+            sscanf(line,"		 * secondary channel offset: %s", &secondary_chan);
+            if(!strcmp(secondary_chan, "no secondary")) {
+                //20Mhz
+                sprintf(&(scan_array[i].ap_OperatingChannelBandwidth),"11N%s_HT20", radio_index%1 ? "A": "G");
+            }
+
+            if(!strcmp(secondary_chan, "above")) {
+                //40Mhz +
+                sprintf(&(scan_array[i].ap_OperatingChannelBandwidth),"11N%s_HT40PLUS", radio_index%1 ? "A": "G");
+            }
+
+            if(!strcmp(secondary_chan, "below")) {
+                //40Mhz -
+                sprintf(&(scan_array[i].ap_OperatingChannelBandwidth),"11N%s_HT40MINUS", radio_index%1 ? "A": "G");
+            }
 
 
-    sprintf(HConf_file,"%s%d%s","/nvram/hostapd",apIndex,".conf");
-    GetInterfaceName(interface_name,HConf_file);
+            read = getline(&line, &len, f);
+            if(strncmp(line,"BSS",3) == 0) {
+                // No VHT
+                continue;
+            }
+            if(strncmp(line,"	VHT operation:",15) !=0) {
+                    wifi_dbg_printf("%s:VHT output parsing error (%s)\n", __func__, line);
+                    goto output_error;
+            }
+            read = getline(&line, &len, f);
+            sscanf(line,"		 * channel width: %d", &vht_channel_width);
+            if(vht_channel_width -= 1) {
+                sprintf(&(scan_array[i].ap_OperatingChannelBandwidth),"11AC_VHT80");
+            }
 
-    sprintf(cmd,"%s%s%s","iwlist ",interface_name," scan | grep Address | cut -d " " -f15 |  tr -s ' ' |   tr \\n ' ' | sed 's/ /,/g' | sed 's/,$/ /g'");
-    _syscmd(cmd,buf,sizeof(buf));
-
-
-    for(count = 0;buf[count]!='\n';count++)
-        tmp_buf[count] = buf[count]; //ajusting the size
-    tmp_buf[count] = '\0';
-
-    char* token = strtok(tmp_buf, ",");
-
-    while (token != NULL) { 
-        scan_array->ap_BSSID[scan_count] = token;
-        scan_count++;
-        token = strtok(NULL, ","); 
-    } 
-
-    *neighbor_ap_array = scan_array;
+        }
+        read = getline(&line, &len, f);
+    }
+    wifi_dbg_printf("%s:Counted BSS: %d\n",__func__, scan_count);
     *output_array_size = scan_count;
-
+    *neighbor_ap_array = scan_array;
+    free(line);
     return RETURN_OK;
+
+output_error:
+    free(line);
+    free(scan_array);
+    return RETURN_ERR;
 }
 INT wifi_getApAssociatedDeviceStats(
         INT apIndex,

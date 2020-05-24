@@ -6535,56 +6535,49 @@ INT wifi_getApAssociatedDeviceStats(
         u64 *handle)
 {
     wifi_associated_dev_stats_t *dev_stats = associated_dev_stats;
-    char HConf_file[MAX_BUF_SIZE] = {'\0'};
-    int count = 0;
-    int i=0;
     char interface_name[50] = {0};
     char cmd[1024] =  {0};
-    char buf[1024] = {0};
-    char tmp_buf[1024] = {0};
+    char mac_str[18] = {0};
+    char *key = NULL;
+    char *val = NULL;
+    FILE *f = NULL;
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read = 0;
 
-    const char *StatsName[] = {"rx packets",
-        "tx packets",
-        "rx bytes",
-        "tx bytes",
-        "tx errors"	};
-
-    sprintf(HConf_file,"%s%d%s","/nvram/hostapd",apIndex,".conf");
-    GetInterfaceName(interface_name,HConf_file);
-
-    for(i=0;i<=4;i++)
-    {
-
-        sprintf(cmd,"%s%s%s%s%s","iw dev ",interface_name," station dump |  grep -i -A 18  ",clientMacAddress,"  | grep ",StatsName[i]," | cut -d ':' -f2");
-
-        _syscmd(cmd,buf,sizeof(buf));
-        for(count = 0;buf[count]!='\n';count++)
-            tmp_buf[count] = buf[count]; //ajusting the size
-        tmp_buf[count] = '\0';
-
-        if(strcmp(StatsName[i],"rx packets") == 0)
-        {
-            strcpy(dev_stats->cli_rx_frames,tmp_buf);
-        }
-        else if(strcmp(StatsName[i],"tx packets") == 0)
-        {
-            strcpy(dev_stats->cli_tx_frames,tmp_buf);
-        }
-        else if(strcmp(StatsName[i],"rx bytes") == 0)
-        {
-            strcpy(dev_stats->cli_rx_bytes,tmp_buf);
-        }
-        else if(strcmp(StatsName[i],"tx bytes") == 0)
-        {
-            strcpy(dev_stats->cli_tx_bytes,tmp_buf);
-        }
-        else if(strcmp(StatsName[i],"tx failed") == 0)
-        {
-            strcpy(dev_stats->cli_rx_bytes,tmp_buf);
-        }
-        else
-            printf("No Matching stats info");
+    if(wifi_getApName(apIndex, &interface_name) != RETURN_OK) {
+        wifi_dbg_printf("%s: wifi_getApName failed\n",  __FUNCTION__);
+        return RETURN_ERR;
     }
+
+    sprintf(mac_str, "%x:%x:%x:%x:%x:%x", (*clientMacAddress)[0],(*clientMacAddress)[1],(*clientMacAddress)[2],(*clientMacAddress)[3],(*clientMacAddress)[4],(*clientMacAddress)[5]);
+    sprintf(cmd,"iw dev %s station get %s | grep 'rx\\|tx' | tr -d '\t'", interface_name, mac_str);
+    if((f = popen(cmd, "r")) == NULL) {
+        wifi_dbg_printf("%s: popen %s error\n", __func__, cmd);
+        return RETURN_ERR;
+    }
+
+    while ((read = getline(&line, &len, f))  != -1) {
+        key = strtok(line,":");
+        val = strtok(NULL,":");
+
+	if(!strncmp(key,"rx bytes",8))
+	    sscanf(val, "%llu", &dev_stats->cli_rx_bytes);
+	if(!strncmp(key,"tx bytes",8))
+            sscanf(val, "%llu", &dev_stats->cli_tx_bytes);
+	if(!strncmp(key,"rx packets",10))
+            sscanf(val, "%llu", &dev_stats->cli_tx_frames);
+	if(!strncmp(key,"tx packets",10))
+            sscanf(val, "%llu", &dev_stats->cli_tx_frames);
+        if(!strncmp(key,"tx retries",10))
+            sscanf(val, "%llu", &dev_stats->cli_tx_retries);
+        if(!strncmp(key,"tx failed",9))
+            sscanf(val, "%llu", &dev_stats->cli_tx_errors);
+        if(!strncmp(key,"rx drop misc",13))
+            sscanf(val, "%llu", &dev_stats->cli_rx_errors);
+    }
+    free(line);
+    pclose(f);
     return RETURN_OK;
 }
 

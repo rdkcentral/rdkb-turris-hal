@@ -379,7 +379,6 @@ void GetInterfaceName(char *interface_name, char *conf_file)
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     wifi_hostapdRead(conf_file,"interface",interface_name,IF_NAMESIZE);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-    return 0;
 }
 
 int GetInterfaceNameFromIdx(int radio_index, char *interface_name)
@@ -875,7 +874,6 @@ void macfilter_init()
        }
     }
     fclose(fp);
-   return 0;
 }
 
 // Initializes the wifi subsystem (all radios)
@@ -6643,10 +6641,11 @@ INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex,wifi_associated_dev2
     *output_array_size = 0;
     *associated_dev_array = NULL;
     char interface_name[50] = {0};
-    char HConf_file[MAX_BUF_SIZE] = {'\0'};
 
-    sprintf(HConf_file,"%s%d%s","/nvram/hostapd",apIndex,".conf");
-    GetInterfaceName(interface_name,HConf_file);
+    if(wifi_getApName(apIndex, &interface_name) != RETURN_OK) {
+        wifi_dbg_printf("%s: wifi_getApName failed\n",  __FUNCTION__);
+        return RETURN_ERR;
+    }
 
     sprintf(pipeCmd, "iw dev %s station dump | grep %s | wc -l", interface_name, interface_name);
     fp = popen(pipeCmd, "r");
@@ -6660,7 +6659,7 @@ INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex,wifi_associated_dev2
     fgets(str, sizeof(str)-1, fp);
     wifi_count = (unsigned int) atoi ( str );
     *output_array_size = wifi_count;
-    printf(" In rdkb hal ,Wifi Client Counts and index %d and  %d \n",*output_array_size,apIndex);
+    wifi_dbg_printf(" In rdkb hal ,Wifi Client Counts and index %d and  %d \n",*output_array_size,apIndex);
     pclose(fp);
 
     if(wifi_count == 0)
@@ -6704,7 +6703,7 @@ INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex,wifi_associated_dev2
 
                     }
                     memcpy(temp[count].cli_MACAddress,mac,(sizeof(unsigned char))*6);
-                    printf("MAC %d = %X:%X:%X:%X:%X:%X \n", count, temp[count].cli_MACAddress[0],temp[count].cli_MACAddress[1], temp[count].cli_MACAddress[2], temp[count].cli_MACAddress[3], temp[count].cli_MACAddress[4], temp[count].cli_MACAddress[5]);
+                    wifi_dbg_printf("MAC %d = %X:%X:%X:%X:%X:%X \n", count, temp[count].cli_MACAddress[0],temp[count].cli_MACAddress[1], temp[count].cli_MACAddress[2], temp[count].cli_MACAddress[3], temp[count].cli_MACAddress[4], temp[count].cli_MACAddress[5]);
                 }
                 temp[count].cli_AuthenticationState = 1; //TODO
                 temp[count].cli_Active = 1; //TODO

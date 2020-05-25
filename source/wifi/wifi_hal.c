@@ -3640,18 +3640,23 @@ INT wifi_getApName(INT apIndex, CHAR *output_string)
 }
 
 // Outputs the index number in that corresponds to the SSID string
-INT wifi_getApIndexFromName(CHAR *inputSsidString, INT *ouput_int)
+INT wifi_getIndexFromName(CHAR *inputSsidString, INT *output_int)
 {
-    CHAR *pos=NULL;
+    CHAR *pos = NULL;
 
-    *ouput_int = -1;
-    pos=strstr(inputSsidString, AP_PREFIX);
+    *output_int = -1;
+    pos = strstr(inputSsidString, AP_PREFIX);
     if(pos) 
     {
-        sscanf(pos+strlen(AP_PREFIX),"%d", ouput_int);
+        sscanf(pos+strlen(AP_PREFIX),"%d", output_int);
         return RETURN_OK;
-    } 
+    }
     return RETURN_ERR;
+}
+
+INT wifi_getApIndexFromName(CHAR *inputSsidString, INT *output_int)
+{
+    return wifi_getIndexFromName(inputSsidString, output_int);
 }
 
 // Outputs a 32 byte or less string indicating the beacon type as "None", "Basic", "WPA", "11i", "WPAand11i"
@@ -3741,7 +3746,7 @@ INT wifi_setApRtsThreshold(INT apIndex, UINT threshold)
     return RETURN_OK;
 }
 
-// ouputs up to a 32 byte string as either "TKIPEncryption", "AESEncryption", or "TKIPandAESEncryption"
+// outputs up to a 32 byte string as either "TKIPEncryption", "AESEncryption", or "TKIPandAESEncryption"
 INT wifi_getApWpaEncryptoinMode(INT apIndex, CHAR *output_string)
 {
     if (NULL == output_string)
@@ -4457,7 +4462,7 @@ INT wifi_getApStatus(INT apIndex, CHAR *output_string)
 }
 
 //Indicates whether or not beacons include the SSID name.
-// outputs a 1 if SSID on the AP is enabled, else ouputs 0
+// outputs a 1 if SSID on the AP is enabled, else outputs 0
 INT wifi_getApSsidAdvertisementEnable(INT apIndex, BOOL *output)
 {
     //get the running status

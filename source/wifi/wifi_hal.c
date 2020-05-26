@@ -7809,7 +7809,9 @@ struct ctrl {
     ev_io io;
 };
 static wifi_newApAssociatedDevice_callback clients_connect_cb;
+#ifdef MULTI_PSK
 static wifi_newApAssociatedDevice_callback2 clients_connect_cb2;
+#endif
 static wifi_apDisassociatedDevice_callback clients_disconnect_cb;
 static struct ctrl wpa_ctrl[MAX_SUPPORTED_IFACES];
 static int initialized;

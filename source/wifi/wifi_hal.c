@@ -62,7 +62,7 @@
 #endif
 
 #ifndef RADIO_PREFIX
-#define RADIO_PREFIX	"wifi"
+#define RADIO_PREFIX	"wlan"
 #endif
 
 #define MAX_BUF_SIZE 128
@@ -70,6 +70,13 @@
 
 //Uncomment to enable debug logs
 //#define WIFI_DEBUG
+
+
+/* Enable Multi-PSK support
+ * This enables key identifier support in associated device event.
+ * Key identifier support requires new associated device structure.
+ */
+//#define MULTI_PSK
 
 #ifdef WIFI_DEBUG
 #define wifi_dbg_printf printf
@@ -379,7 +386,6 @@ void GetInterfaceName(char *interface_name, char *conf_file)
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     wifi_hostapdRead(conf_file,"interface",interface_name,IF_NAMESIZE);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-    return 0;
 }
 
 int GetInterfaceNameFromIdx(int radio_index, char *interface_name)
@@ -875,7 +881,6 @@ void macfilter_init()
        }
     }
     fclose(fp);
-   return 0;
 }
 
 // Initializes the wifi subsystem (all radios)
@@ -6494,46 +6499,109 @@ INT wifi_pushRadioChannel2(INT radioIndex, UINT channel, UINT channel_width_MHz,
     return RETURN_OK;
 }
 
-INT wifi_getNeighboringWiFiStatus(INT apIndex, wifi_neighbor_ap2_t **neighbor_ap_array, UINT *output_array_size)
+INT wifi_getNeighboringWiFiStatus(INT radio_index, wifi_neighbor_ap2_t **neighbor_ap_array, UINT *output_array_size)
 {
     char cmd[1024] =  {0};
     char buf[1024] = {0};
-    char tmp_buf[1024] = {0};
-
-    char HConf_file[MAX_BUF_SIZE] = {'\0'};
-    int count = 0;
-    char interface_name[50] = {0};
-
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    *neighbor_ap_array = NULL;
-    *output_array_size = 0;
     wifi_neighbor_ap2_t *scan_array = NULL;
     int scan_count=0;
+    int i =0;
+    int freq=0;
+    size_t len=0;
+    FILE *f = NULL;
+    ssize_t read = 0;
+    char *line =NULL;
+    char radio_ifname[64];
+    char secondary_chan[64];
+    int vht_channel_width = 0;
+
+    if(wifi_getRadioIfName(radio_index,radio_ifname)!=RETURN_OK)
+        return RETURN_ERR;
+
+    /* sched_start is not supported on open source ath9k ath10k firmware
+     * Using active scan as a workaround */
+    sprintf(cmd,"iw dev %s scan |grep '^BSS\\|SSID:\\|freq:\\|signal:\\|HT operation:\\|secondary channel offset:\\|* channel width:'", radio_ifname);
+    if((f = popen(cmd, "r")) == NULL) {
+        wifi_dbg_printf("%s: popen %s error\n", __func__, cmd);
+        return RETURN_ERR;
+    }
+    read = getline(&line, &len, f);
+    while (read  != -1) {
+        if(strncmp(line,"BSS",3) == 0) {
+            i = scan_count;
+            scan_count++;
+            scan_array = realloc(scan_array,sizeof(wifi_neighbor_ap2_t)*scan_count);
+            memset(&(scan_array[i]),0, sizeof(wifi_neighbor_ap2_t));
+            sscanf(line,"BSS %17s", &(scan_array[i].ap_BSSID));
+
+            read = getline(&line, &len, f);
+            sscanf(line,"	freq: %d", &freq);
+            scan_array[i].ap_Channel = ieee80211_frequency_to_channel(freq);
+
+            read = getline(&line, &len, f);
+            sscanf(line,"	signal: %d", &(scan_array[i].ap_SignalStrength));
+
+            read = getline(&line, &len, f);
+            sscanf(line,"	SSID: %s", &(scan_array[i].ap_SSID));
+            wifi_dbg_printf("%s:Discovered BSS %s, %d, %d , %s\n", __func__, scan_array[i].ap_BSSID, scan_array[i].ap_Channel,scan_array[i].ap_SignalStrength, scan_array[i].ap_SSID);
+            read = getline(&line, &len, f);
+            if(strncmp(line,"BSS",3)==0) {
+                // No HT and no VHT => 20Mhz
+                sprintf(&(scan_array[i].ap_OperatingChannelBandwidth),"11%s", radio_index%1 ? "A": "G");
+                continue;
+            }
+            if(strncmp(line,"	HT operation:",14)!= 0) {
+                    wifi_dbg_printf("HT output parsing error (%s)\n", line);
+                    goto output_error;
+            }
+
+            read = getline(&line, &len, f);
+            sscanf(line,"		 * secondary channel offset: %s", &secondary_chan);
+            if(!strcmp(secondary_chan, "no secondary")) {
+                //20Mhz
+                sprintf(&(scan_array[i].ap_OperatingChannelBandwidth),"11N%s_HT20", radio_index%1 ? "A": "G");
+            }
+
+            if(!strcmp(secondary_chan, "above")) {
+                //40Mhz +
+                sprintf(&(scan_array[i].ap_OperatingChannelBandwidth),"11N%s_HT40PLUS", radio_index%1 ? "A": "G");
+            }
+
+            if(!strcmp(secondary_chan, "below")) {
+                //40Mhz -
+                sprintf(&(scan_array[i].ap_OperatingChannelBandwidth),"11N%s_HT40MINUS", radio_index%1 ? "A": "G");
+            }
 
 
-    sprintf(HConf_file,"%s%d%s","/nvram/hostapd",apIndex,".conf");
-    GetInterfaceName(interface_name,HConf_file);
+            read = getline(&line, &len, f);
+            if(strncmp(line,"BSS",3) == 0) {
+                // No VHT
+                continue;
+            }
+            if(strncmp(line,"	VHT operation:",15) !=0) {
+                    wifi_dbg_printf("%s:VHT output parsing error (%s)\n", __func__, line);
+                    goto output_error;
+            }
+            read = getline(&line, &len, f);
+            sscanf(line,"		 * channel width: %d", &vht_channel_width);
+            if(vht_channel_width -= 1) {
+                sprintf(&(scan_array[i].ap_OperatingChannelBandwidth),"11AC_VHT80");
+            }
 
-    sprintf(cmd,"%s%s%s","iwlist ",interface_name," scan | grep Address | cut -d " " -f15 |  tr -s ' ' |   tr \\n ' ' | sed 's/ /,/g' | sed 's/,$/ /g'");
-    _syscmd(cmd,buf,sizeof(buf));
-
-
-    for(count = 0;buf[count]!='\n';count++)
-        tmp_buf[count] = buf[count]; //ajusting the size
-    tmp_buf[count] = '\0';
-
-    char* token = strtok(tmp_buf, ",");
-
-    while (token != NULL) { 
-        scan_array->ap_BSSID[scan_count] = token;
-        scan_count++;
-        token = strtok(NULL, ","); 
-    } 
-
-    *neighbor_ap_array = scan_array;
+        }
+        read = getline(&line, &len, f);
+    }
+    wifi_dbg_printf("%s:Counted BSS: %d\n",__func__, scan_count);
     *output_array_size = scan_count;
-
+    *neighbor_ap_array = scan_array;
+    free(line);
     return RETURN_OK;
+
+output_error:
+    free(line);
+    free(scan_array);
+    return RETURN_ERR;
 }
 INT wifi_getApAssociatedDeviceStats(
         INT apIndex,
@@ -6542,56 +6610,49 @@ INT wifi_getApAssociatedDeviceStats(
         u64 *handle)
 {
     wifi_associated_dev_stats_t *dev_stats = associated_dev_stats;
-    char HConf_file[MAX_BUF_SIZE] = {'\0'};
-    int count = 0;
-    int i=0;
     char interface_name[50] = {0};
     char cmd[1024] =  {0};
-    char buf[1024] = {0};
-    char tmp_buf[1024] = {0};
+    char mac_str[18] = {0};
+    char *key = NULL;
+    char *val = NULL;
+    FILE *f = NULL;
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read = 0;
 
-    const char *StatsName[] = {"rx packets",
-        "tx packets",
-        "rx bytes",
-        "tx bytes",
-        "tx errors"	};
-
-    sprintf(HConf_file,"%s%d%s","/nvram/hostapd",apIndex,".conf");
-    GetInterfaceName(interface_name,HConf_file);
-
-    for(i=0;i<=4;i++)
-    {
-
-        sprintf(cmd,"%s%s%s%s%s","iw dev ",interface_name," station dump |  grep -i -A 18  ",clientMacAddress,"  | grep ",StatsName[i]," | cut -d ':' -f2");
-
-        _syscmd(cmd,buf,sizeof(buf));
-        for(count = 0;buf[count]!='\n';count++)
-            tmp_buf[count] = buf[count]; //ajusting the size
-        tmp_buf[count] = '\0';
-
-        if(strcmp(StatsName[i],"rx packets") == 0)
-        {
-            strcpy(dev_stats->cli_rx_frames,tmp_buf);
-        }
-        else if(strcmp(StatsName[i],"tx packets") == 0)
-        {
-            strcpy(dev_stats->cli_tx_frames,tmp_buf);
-        }
-        else if(strcmp(StatsName[i],"rx bytes") == 0)
-        {
-            strcpy(dev_stats->cli_rx_bytes,tmp_buf);
-        }
-        else if(strcmp(StatsName[i],"tx bytes") == 0)
-        {
-            strcpy(dev_stats->cli_tx_bytes,tmp_buf);
-        }
-        else if(strcmp(StatsName[i],"tx failed") == 0)
-        {
-            strcpy(dev_stats->cli_rx_bytes,tmp_buf);
-        }
-        else
-            printf("No Matching stats info");
+    if(wifi_getApName(apIndex, &interface_name) != RETURN_OK) {
+        wifi_dbg_printf("%s: wifi_getApName failed\n",  __FUNCTION__);
+        return RETURN_ERR;
     }
+
+    sprintf(mac_str, "%x:%x:%x:%x:%x:%x", (*clientMacAddress)[0],(*clientMacAddress)[1],(*clientMacAddress)[2],(*clientMacAddress)[3],(*clientMacAddress)[4],(*clientMacAddress)[5]);
+    sprintf(cmd,"iw dev %s station get %s | grep 'rx\\|tx' | tr -d '\t'", interface_name, mac_str);
+    if((f = popen(cmd, "r")) == NULL) {
+        wifi_dbg_printf("%s: popen %s error\n", __func__, cmd);
+        return RETURN_ERR;
+    }
+
+    while ((read = getline(&line, &len, f))  != -1) {
+        key = strtok(line,":");
+        val = strtok(NULL,":");
+
+	if(!strncmp(key,"rx bytes",8))
+	    sscanf(val, "%llu", &dev_stats->cli_rx_bytes);
+	if(!strncmp(key,"tx bytes",8))
+            sscanf(val, "%llu", &dev_stats->cli_tx_bytes);
+	if(!strncmp(key,"rx packets",10))
+            sscanf(val, "%llu", &dev_stats->cli_tx_frames);
+	if(!strncmp(key,"tx packets",10))
+            sscanf(val, "%llu", &dev_stats->cli_tx_frames);
+        if(!strncmp(key,"tx retries",10))
+            sscanf(val, "%llu", &dev_stats->cli_tx_retries);
+        if(!strncmp(key,"tx failed",9))
+            sscanf(val, "%llu", &dev_stats->cli_tx_errors);
+        if(!strncmp(key,"rx drop misc",13))
+            sscanf(val, "%llu", &dev_stats->cli_rx_errors);
+    }
+    free(line);
+    pclose(f);
     return RETURN_OK;
 }
 
@@ -6648,10 +6709,11 @@ INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex,wifi_associated_dev2
     *output_array_size = 0;
     *associated_dev_array = NULL;
     char interface_name[50] = {0};
-    char HConf_file[MAX_BUF_SIZE] = {'\0'};
 
-    sprintf(HConf_file,"%s%d%s","/nvram/hostapd",apIndex,".conf");
-    GetInterfaceName(interface_name,HConf_file);
+    if(wifi_getApName(apIndex, &interface_name) != RETURN_OK) {
+        wifi_dbg_printf("%s: wifi_getApName failed\n",  __FUNCTION__);
+        return RETURN_ERR;
+    }
 
     sprintf(pipeCmd, "iw dev %s station dump | grep %s | wc -l", interface_name, interface_name);
     fp = popen(pipeCmd, "r");
@@ -6665,7 +6727,7 @@ INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex,wifi_associated_dev2
     fgets(str, sizeof(str)-1, fp);
     wifi_count = (unsigned int) atoi ( str );
     *output_array_size = wifi_count;
-    printf(" In rdkb hal ,Wifi Client Counts and index %d and  %d \n",*output_array_size,apIndex);
+    wifi_dbg_printf(" In rdkb hal ,Wifi Client Counts and index %d and  %d \n",*output_array_size,apIndex);
     pclose(fp);
 
     if(wifi_count == 0)
@@ -6709,7 +6771,7 @@ INT wifi_getApAssociatedDeviceDiagnosticResult2(INT apIndex,wifi_associated_dev2
 
                     }
                     memcpy(temp[count].cli_MACAddress,mac,(sizeof(unsigned char))*6);
-                    printf("MAC %d = %X:%X:%X:%X:%X:%X \n", count, temp[count].cli_MACAddress[0],temp[count].cli_MACAddress[1], temp[count].cli_MACAddress[2], temp[count].cli_MACAddress[3], temp[count].cli_MACAddress[4], temp[count].cli_MACAddress[5]);
+                    wifi_dbg_printf("MAC %d = %X:%X:%X:%X:%X:%X \n", count, temp[count].cli_MACAddress[0],temp[count].cli_MACAddress[1], temp[count].cli_MACAddress[2], temp[count].cli_MACAddress[3], temp[count].cli_MACAddress[4], temp[count].cli_MACAddress[5]);
                 }
                 temp[count].cli_AuthenticationState = 1; //TODO
                 temp[count].cli_Active = 1; //TODO
@@ -7747,6 +7809,7 @@ struct ctrl {
     ev_io io;
 };
 static wifi_newApAssociatedDevice_callback clients_connect_cb;
+static wifi_newApAssociatedDevice_callback2 clients_connect_cb2;
 static wifi_apDisassociatedDevice_callback clients_disconnect_cb;
 static struct ctrl wpa_ctrl[MAX_SUPPORTED_IFACES];
 static int initialized;
@@ -7809,12 +7872,11 @@ static void ctrl_ev_cb(EV_P_ struct ev_io *io, int events)
     /* Example events:
      *
      * <3>AP-STA-CONNECTED 60:b4:f7:f0:0a:19
-     * <3>AP-STA-CONNECTED-PWD 60:b4:f7:f0:0a:19 passphrase
+     * <3>AP-STA-CONNECTED 60:b4:f7:f0:0a:19 keyid=sample_keyid
      * <3>AP-STA-DISCONNECTED 60:b4:f7:f0:0a:19
      * <3>CTRL-EVENT-CONNECTED - Connection to 00:1d:73:73:88:ea completed [id=0 id_str=]
      * <3>CTRL-EVENT-DISCONNECTED bssid=00:1d:73:73:88:ea reason=3 locally_generated=1
      */
-    printf("Received (%d): %s\n", ctrl->ssid_index, buf);
     if (!(str = index(buf, '>')))
         return;
     if (sscanf(buf, "<%d>", &level) != 1)
@@ -7822,20 +7884,33 @@ static void ctrl_ev_cb(EV_P_ struct ev_io *io, int events)
 
     str++;
 
-    printf("Calling callback\n");
-
     if (strncmp("AP-STA-CONNECTED ", str, 17) == 0) {
         if (!(str = index(buf, ' ')))
             return;
-
+#ifdef MULTI_PSK
+        wifi_associated_dev4_t sta;
+#else
         wifi_associated_dev_t sta;
+#endif
         memset(&sta, 0, sizeof(sta));
 
         sscanf(str, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
                 &sta.cli_MACAddress[0], &sta.cli_MACAddress[1], &sta.cli_MACAddress[2],
                 &sta.cli_MACAddress[3], &sta.cli_MACAddress[4], &sta.cli_MACAddress[5]);
 
+        sta.cli_Active=true;
+
+#ifdef MULTI_PSK
+        str++;
+        if (str = index(str, ' '))
+        {
+            str++;
+            sscanf(str, "keyid=%s", &(sta.cli_MultiPskKeyID));
+        }
+        (clients_connect_cb2)(ctrl->ssid_index, &sta);
+#else
         (clients_connect_cb)(ctrl->ssid_index, &sta);
+#endif
         goto handled;
     }
     if (strncmp("AP-STA-DISCONNECTED ", str, 20) == 0) {
@@ -7885,7 +7960,6 @@ static int ctrl_open(struct ctrl *ctrl)
 
     ev_io_init(&ctrl->io, ctrl_ev_cb, fd, EV_READ);
     ev_io_start(EV_DEFAULT_ &ctrl->io);
-    printf("%s: opened", ctrl->bss);
 
     return 0;
 
@@ -7924,7 +7998,7 @@ int ctrl_enable(struct ctrl *ctrl)
         ev_stat_init(&ctrl->stat, ctrl_stat_cb, ctrl->sockpath, 0.);
         ev_stat_start(EV_DEFAULT_ &ctrl->stat);
     }
-    printf("enabling for %s\n", ctrl->sockpath);
+
     if (!ctrl->retry.cb)
         ev_timer_init(&ctrl->retry, ctrl_retry_cb, 0., 5.);
 
@@ -7942,7 +8016,7 @@ static int init_wpa()
         printf("%s: failed to get SSID count", __func__);
         return RETURN_ERR;
     }
-    printf("initializing sockets to hostapd\n");
+
     if (snum > MAX_SUPPORTED_IFACES) {
         printf("more ssid than supported! %d\n", snum);
         return RETURN_ERR;
@@ -8012,6 +8086,145 @@ INT wifi_switchBand(char *interface_name,INT radioIndex,char *freqBand)
     // TODO API refrence Implementaion is present on RPI hal
     return RETURN_ERR;
 }
+
+/* multi-psk support */
+#ifdef MULTI_PSK
+void wifi_newApAssociatedDevice_callback_register2(wifi_newApAssociatedDevice_callback2 callback_proc)
+{
+    clients_connect_cb2 = callback_proc;
+    if (!initialized)
+        init_wpa();
+}
+
+INT wifi_getApAssociatedDeviceDiagnosticResult4(INT apIndex, wifi_associated_dev4_t **associated_dev_array, UINT *output_array_size)
+{
+     int ret = 0;
+     char cmd[256];
+     char keyid[2048];
+     wifi_associated_dev3_t *associated_dev = NULL;
+     wifi_associated_dev4_t *dev=NULL;
+     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+     ret = wifi_getApAssociatedDeviceDiagnosticResult3(apIndex, &associated_dev, output_array_size);
+     if (ret != RETURN_OK)
+	return ret;
+
+    if (*output_array_size <= 0)
+        return RETURN_OK;
+
+    dev=(wifi_associated_dev4_t *) calloc (*output_array_size, sizeof(wifi_associated_dev4_t));
+    *associated_dev_array = dev;
+
+    for(int i=0; i<*output_array_size;i++) {
+        //Copy previous fields
+        memcpy(dev[i].cli_MACAddress, associated_dev[i].cli_MACAddress, sizeof(dev[i].cli_MACAddress));
+
+        sprintf(cmd, "hostapd_cli -i %s%d sta %x:%x:%x:%x:%x:%x |grep '^keyid' | cut -f 2 -d = | tr -d '\n'",
+            AP_PREFIX,
+            apIndex,
+            dev[i].cli_MACAddress[0],
+            dev[i].cli_MACAddress[1],
+            dev[i].cli_MACAddress[2],
+            dev[i].cli_MACAddress[3],
+            dev[i].cli_MACAddress[4],
+            dev[i].cli_MACAddress[5]
+        );
+        _syscmd(cmd, dev[i].cli_MultiPskKeyID, 64);
+
+    }
+    free(associated_dev);
+    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
+
+    return RETURN_OK;
+}
+
+INT wifi_pushMultiPskKeys(INT apIndex, wifi_key_multi_psk_t *keys, INT keysNumber)
+{
+    FILE *fd      = NULL;
+    char fname[100];
+    char cmd[128] = {0};
+    char out[64] = {0};
+    wifi_key_multi_psk_t * key = NULL;
+    if(keysNumber < 0)
+            return RETURN_ERR;
+
+    snprintf(fname, sizeof(fname), "/tmp/hostapd%d.psk", apIndex);
+    fd = fopen(fname, "w");
+    if (!fd) {
+            return RETURN_ERR;
+    }
+    key= (wifi_key_multi_psk_t *) keys;
+    for(int i=0; i<keysNumber; ++i, key++) {
+        fprintf(fd, "keyid=%s 00:00:00:00:00:00 %s\n", key->wifi_keyId, key->wifi_psk);
+    }
+    fclose(fd);
+
+    //reload file
+    sprintf(cmd, "hostapd_cli -i%s%d raw RELOAD_WPA_PSK", AP_PREFIX, apIndex);
+    _syscmd(cmd, out, 64);
+    return RETURN_OK;
+}
+
+INT wifi_getMultiPskKeys(INT apIndex, wifi_key_multi_psk_t *keys, INT keysNumber)
+{
+    FILE *fd      = NULL;
+    char fname[100];
+    char * line = NULL;
+    char * pos = NULL;
+    size_t len = 0;
+    ssize_t read = 0;
+    INT ret = RETURN_OK;
+    wifi_key_multi_psk_t *keys_it = NULL;
+
+    if (keysNumber < 1) {
+        return RETURN_ERR;
+    }
+
+    snprintf(fname, sizeof(fname), "/tmp/hostapd%d.psk", apIndex);
+    fd = fopen(fname, "r");
+    if (!fd) {
+        return RETURN_ERR;
+    }
+
+    if (keys == NULL) {
+        ret = RETURN_ERR;
+        goto close;
+    }
+
+    keys_it = keys;
+    while ((read = getline(&line, &len, fd)) != -1) {
+        if(strcmp(line,"keyid=")) {
+            sscanf(line, "keyid=%s", &(keys_it->wifi_keyId));
+            if (!(pos = index(line, ' '))) {
+                ret = RETURN_ERR;
+                goto close;
+            }
+            pos++;
+            //Here should be 00:00:00:00:00:00
+            if (!(strcmp(pos,"00:00:00:00:00:00"))) {
+                 printf("Not supported MAC: %s\n", pos);
+            }
+            if (!(pos = index(pos, ' '))) {
+                ret = RETURN_ERR;
+                goto close;
+            }
+            pos++;
+
+            //The rest is PSK
+            snprintf(&(keys_it->wifi_psk),strlen(pos),pos);
+            keys_it++;
+
+            if(--keysNumber <= 0)
+		break;
+        }
+    }
+
+close:
+    free(line);
+    fclose(fd);
+    return ret;
+}
+#endif
+/* end of multi-psk support */
 
 #ifdef _TURRIS_EXTENDER_
 /* client API */

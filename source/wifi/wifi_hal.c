@@ -387,6 +387,17 @@ static int wifi_hostapdProcessUpdate(int apIndex, struct params *list, int item_
             perror("fgets failed");
             return -1;
         }
+        snprintf(cmd, sizeof(cmd), "hostapd_cli -i%s%d RELOAD", AP_PREFIX, apIndex);
+        if((fp = popen(cmd, "r"))==NULL)
+        {
+            perror("popen failed");
+            return -1;
+        }
+        if(!fgets(output, sizeof(output), fp) || strncmp(output, "OK", 2))
+        {
+            perror("fgets failed");
+            return -1;
+        }
     }
     return 0;
 }

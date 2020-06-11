@@ -55,7 +55,7 @@
 #define CONFIG_PREFIX "/nvram/hostapd"
 #define ACL_PREFIX "/tmp/hostapd-acl"
 //#define ACL_PREFIX "/tmp/wifi_acl_list" //RDKB convention
-#define SOCK_PREFIX "/var/run/hostapd/wifi"
+#define SOCK_PREFIX "/var/run/hostapd"
 
 #ifndef AP_PREFIX
 #define AP_PREFIX	"wifi"
@@ -3980,7 +3980,7 @@ INT wifi_kickApAssociatedDevice(INT apIndex, CHAR *client_mac)
 {
     char buf[126]={'\0'};
 
-    sprintf(buf,"hostapd_cli -p /var/run/hostapd%d disassociate %s",apIndex,client_mac);
+    sprintf(buf,"hostapd_cli -i%s%d disassociate %s", AP_PREFIX, apIndex, client_mac);
     system(buf);
 
     return RETURN_OK;
@@ -5262,7 +5262,7 @@ INT wifi_getApAssociatedDeviceDiagnosticResult(INT apIndex, wifi_associated_dev_
 
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     *associated_dev_array = NULL;
-    sprintf(cmd, "hostapd_cli -p /var/run/hostapd%d all_sta | grep AUTHORIZED | wc -l" , apIndex);
+    sprintf(cmd, "hostapd_cli -i%s%d all_sta | grep AUTHORIZED | wc -l", AP_PREFIX, apIndex);
     _syscmd(cmd,buf,sizeof(buf));
     *output_array_size = atoi(buf);
 
@@ -5271,7 +5271,7 @@ INT wifi_getApAssociatedDeviceDiagnosticResult(INT apIndex, wifi_associated_dev_
 
     dev=(wifi_associated_dev_t *) calloc (*output_array_size, sizeof(wifi_associated_dev_t));
     *associated_dev_array = dev;
-    sprintf(cmd, "hostapd_cli -p /var/run/hostapd%d all_sta > /tmp/connected_devices.txt" , apIndex);
+    sprintf(cmd, "hostapd_cli -i%s%d all_sta > /tmp/connected_devices.txt" , AP_PREFIX, apIndex);
     _syscmd(cmd,buf,sizeof(buf));
     f = fopen("/tmp/connected_devices.txt", "r");
     if (f==NULL)
@@ -5829,7 +5829,7 @@ INT wifi_getApAssociatedDeviceDiagnosticResult3(INT apIndex, wifi_associated_dev
     ssize_t nread;
     wifi_associated_dev3_t *dev=NULL;
     *associated_dev_array = NULL;
-    sprintf(cmd, "hostapd_cli -p /var/run/hostapd%d all_sta | grep AUTHORIZED | wc -l" , apIndex);
+    sprintf(cmd, "hostapd_cli -i%s%d all_sta | grep AUTHORIZED | wc -l", AP_PREFIX, apIndex);
     _syscmd(cmd,buf,sizeof(buf));
     *output_array_size = atoi(buf);
 
@@ -5838,7 +5838,7 @@ INT wifi_getApAssociatedDeviceDiagnosticResult3(INT apIndex, wifi_associated_dev
 
     dev=(wifi_associated_dev3_t *) AnscAllocateMemory(*output_array_size * sizeof(wifi_associated_dev3_t));
     *associated_dev_array = dev;
-    sprintf(cmd, "hostapd_cli -p /var/run/hostapd%d all_sta > /tmp/connected_devices.txt" , apIndex);
+    sprintf(cmd, "hostapd_cli -i%s%d all_sta > /tmp/connected_devices.txt", AP_PREFIX, apIndex);
     _syscmd(cmd,buf,sizeof(buf));
     f = fopen("/tmp/connected_devices.txt", "r");
     if (f==NULL)

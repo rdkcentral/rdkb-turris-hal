@@ -3967,6 +3967,8 @@ INT wifi_getApNumDevicesAssociated(INT apIndex, ULONG *output_ulong)
     char cmd[128]={0};
     char buf[128]={0};
 
+    if(apIndex > 3) //Currently supporting apIndex upto 3
+        return RETURN_ERR;
     //sprintf(cmd, "iw dev %s%d station dump | grep Station | wc -l", AP_PREFIX, apIndex);//alternate method
     sprintf(cmd, "hostapd_cli -i %s%d list_sta | wc -l", AP_PREFIX, apIndex);
     _syscmd(cmd, buf, sizeof(buf));
@@ -4021,6 +4023,8 @@ INT wifi_getApDevicesAssociated(INT apIndex, CHAR *macArray, UINT buf_size)
 {
     char cmd[128];
 
+    if(apIndex > 3) //Currently supporting apIndex upto 3
+        return RETURN_ERR;
     sprintf(cmd, "hostapd_cli -i %s%d list_sta", AP_PREFIX, apIndex);
     //sprintf(buf,"iw dev %s%d station dump | grep Station  | cut -d ' ' -f2", AP_PREFIX,apIndex);//alternate method
     _syscmd(cmd, macArray, buf_size);
@@ -5687,9 +5691,8 @@ INT wifi_getApAssociatedDeviceDiagnosticResult3(INT apIndex, wifi_associated_dev
     *output_array_size = 0;
     *associated_dev_array = NULL;
 
-    if (apIndex < 0) {
+    if (apIndex<0 || apIndex>3) //Currently supporting apIndex upto 3
         return RETURN_ERR;
-    }
 
     wifi_getApNumDevicesAssociated(apIndex, output_array_size);
 

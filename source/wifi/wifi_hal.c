@@ -1102,7 +1102,7 @@ INT wifi_getRadioEnable(INT radioIndex, BOOL *output_bool)      //RDKB
     return RETURN_OK;
 }
 
-INT wifi_setRadioEnable(INT radioIndex, BOOL enable)            //RDKB
+INT wifi_setRadioEnable(INT radioIndex, BOOL enable)
 {
     char IfName[MAX_BUF_SIZE]={'\0'};
     char HConf_file[MAX_BUF_SIZE]={'\0'};
@@ -2756,21 +2756,28 @@ INT wifi_getSSIDRadioIndex(INT ssidIndex, INT *radioIndex)
     return RETURN_OK;
 }
 
+//Device.WiFi.SSID.{i}.Enable
 //Get SSID enable configuration parameters (not the SSID enable status)
 INT wifi_getSSIDEnable(INT ssidIndex, BOOL *output_bool) //Tr181
 {
     if (NULL == output_bool) 
         return RETURN_ERR;
 
+    //For this target, mapping SSID Index 13 & 14 to 2 & 3 respectively.
+    if(ssidIndex==13 || ssidIndex==14) ssidIndex -= 11;
     return wifi_getApEnable(ssidIndex, output_bool);
 }
 
+//Device.WiFi.SSID.{i}.Enable
 //Set SSID enable configuration parameters
 INT wifi_setSSIDEnable(INT ssidIndex, BOOL enable) //Tr181
 {
+    //For this target, mapping SSID Index 13 & 14 to 2 & 3 respectively.
+    if(ssidIndex==13 || ssidIndex==14) ssidIndex -= 11;
     return wifi_setApEnable(ssidIndex, enable);
 }
 
+//Device.WiFi.SSID.{i}.Status
 //Get the SSID enable status
 INT wifi_getSSIDStatus(INT ssidIndex, CHAR *output_string) //Tr181
 {
@@ -2781,6 +2788,9 @@ INT wifi_getSSIDStatus(INT ssidIndex, CHAR *output_string) //Tr181
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     if (NULL == output_string)
         return RETURN_ERR;
+    //For this target, mapping SSID Index 13 & 14 to 2 & 3 respectively.
+    if(ssidIndex==13 || ssidIndex==14) ssidIndex -= 11;
+
     wifi_getApEnable(ssidIndex,&output_bool);
     snprintf(output_string, 32, output_bool==1?"Enabled":"Disabled");
 
@@ -4418,59 +4428,21 @@ INT wifi_setApEnable(INT apIndex, BOOL enable)
 INT wifi_getApEnable(INT apIndex, BOOL *output_bool)
 {
     char cmd[MAX_CMD_SIZE] = {'\0'};
-    char HConf_file[MAX_BUF_SIZE] = {'\0'};
-    char path[MAX_BUF_SIZE] = {'\0'};
-    char IfName[MAX_BUF_SIZE] = {'\0'};
     char buf[MAX_BUF_SIZE] = {'\0'};
-    char tmp_status[MAX_BUF_SIZE] = {'\0'};
-    int count = 0;
-    FILE *fp = NULL;
 
-    if((!output_bool) || (apIndex < 0))
+    if((!output_bool) || (apIndex < 0) || (apIndex > 15))
         return RETURN_ERR;
 
-    //retValue = wifi_getRadioEnable(apIndex, output_bool);
-    if((apIndex == 0) || (apIndex == 1) || (apIndex == 4) || (apIndex == 5))
+    if((apIndex >= 0) && (apIndex <= 3))//Handling 4 APs
     {
-        sprintf(HConf_file,"%s%d%s","/nvram/hostapd",apIndex,".conf");
-        GetInterfaceName(IfName,HConf_file);
-        sprintf(cmd,"%s%s%s","ifconfig ",IfName," | grep RUNNING | tr -s ' ' | cut -d ' ' -f4");
+        sprintf(cmd, "%s%s%d%s", "ifconfig ", AP_PREFIX, apIndex, " | grep RUNNING");
         _syscmd(cmd,buf,sizeof(buf));
-        if(strlen(buf)>0)
-        {
-            *output_bool=1;
-            return RETURN_OK;
-        }
-        if(apIndex == 0)
-            fp = fopen("/tmp/Get2gssidEnable.txt","r");
-        else if(apIndex == 1)
-            fp = fopen("/tmp/Get5gssidEnable.txt","r");
-        else if(apIndex == 4)
-            fp = fopen("/tmp/GetPub2gssidEnable.txt","r");
-        else if(apIndex == 5)
-            fp = fopen("/tmp/GetPub5gssidEnable.txt","r");
-        if(fp == NULL)
-        {
-            *output_bool = 0;
-            return RETURN_OK;
-        }
-        if(fgets(path, sizeof(path)-1, fp) != NULL)
-        {
-            for(count=0;path[count]!='\n';count++)
-                tmp_status[count]=path[count];
-            tmp_status[count]='\0';
-        }
-        fclose(fp);
-        if(strcmp(tmp_status,"0") == 0)
-            *output_bool = 0;
-        else
-            *output_bool = 1;
-        return RETURN_OK;
+        *output_bool = (strlen(buf)>0)?1:0;
     }
-    if((apIndex > 5 ) && (apIndex < 17))
-        return RETURN_OK;
+    else if(apIndex > 3)//APs(4-15) are not supported yet
+        *output_bool = 0;
 
-    return RETURN_ERR;
+    return RETURN_OK;
 }
 
 // Outputs the AP "Enabled" "Disabled" status from driver 

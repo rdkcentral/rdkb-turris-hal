@@ -1,5 +1,5 @@
 ##########################################################################
-# If not stated otherwise in this file or this component's LICENSE
+# If not stated otherwise in this file or this component's Licenses.txt
 # file the following copyright and licenses apply:
 #
 # Copyright 2019 RDK Management
@@ -16,20 +16,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##########################################################################
-AM_CFLAGS = -D_ANSC_LINUX
-AM_CFLAGS += -D_ANSC_USER
-AM_CFLAGS += -D_ANSC_LITTLE_ENDIAN_
+#                                              -*- Autoconf -*-
+# Process this file with autoconf to produce configure script.
+#
 
-AM_CPPFLAGS = -Wall -Werror
-ACLOCAL_AMFLAGS = -I m4
-hardware_platform = armv7ahf-neon-rdk-linux-musleabi
+AC_PREREQ([2.65])
+AC_INIT([hal], [1.0], [BUG-REPORT-ADDRESS])
+AM_INIT_AUTOMAKE([foreign])
+LT_INIT
 
-lib_LTLIBRARIES = libhal_wifi.la
-libhal_wifi_la_CPPFLAGS = -I$(top_srcdir)/include $(CPPFLAGS)
-libhal_wifi_la_SOURCES = wifi_hal.c
-libhal_wifi_la_LDFLAGS = -lev -lwpa_client
+AC_PREFIX_DEFAULT(`pwd`)
+AC_ENABLE_SHARED
+AC_DISABLE_STATIC
 
-#wifihal test binary
-bin_PROGRAMS = wifihal
-wifihal_CPPFLAGS = -I$(top_srcdir)/include $(CPPFLAGS) -D_WIFI_HAL_TEST_
-wifihal_SOURCES = wifi_hal.c
+AC_CONFIG_HEADERS([config.h])
+AC_CONFIG_MACRO_DIR([m4])
+
+# Checks for programs.
+AC_PROG_CC
+AC_PROG_INSTALL
+AM_PROG_CC_C_O
+AM_PROG_LIBTOOL(libtool)
+
+# Checks for header files.
+AC_CHECK_HEADERS([stdlib.h string.h unistd.h])
+
+# Checks for typedefs, structures, and compiler characteristics.
+AC_HEADER_STDBOOL
+AC_C_INLINE
+
+# Checks for library functions.
+AC_FUNC_MALLOC
+
+AC_CONFIG_FILES(Makefile)
+
+
+AC_OUTPUT
+

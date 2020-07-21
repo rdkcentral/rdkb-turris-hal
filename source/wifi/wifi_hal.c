@@ -446,74 +446,43 @@ INT File_Reading(CHAR *file, char *Value)
     return RETURN_OK;
 }
 
-//Restarting the hostapd process
-void restarthostapd_all(char *hostapd_configuration)
-{
-    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    char buf[512] = {0};
-    sprintf(buf,"%s%s%s","ps -eaf | grep ",hostapd_configuration," | grep -v grep | awk '{print $1}' | xargs kill -9");
-    system(buf);
-    system("sleep 3");
-    sprintf(buf,"%s%s","/usr/sbin/hostapd -B ",hostapd_configuration);
-    system(buf);
-    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-}
-
-void wifi_RestartHostapd_5G(INT radioIndex)
-{
-    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-
-    if(radioIndex == 1)
-        system("ps -eaf | grep hostapd1.conf | grep -v grep | awk '{print $1}' | xargs kill -9");
-    else if(radioIndex == 5)
-        system("ps -eaf | grep hostapd5.conf | grep -v grep | awk '{print $1}' | xargs kill -9");
-
-    system("rmmod rtl8812au && rmmod 88x2bu");
-    system("sleep 3");
-    system("modprobe rtl8812au && modprobe 88x2bu");
-    system("sleep 5");
-    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-}
-
 void wifi_RestartHostapd_2G()
 {
+    int Public2GApIndex = 4;
+
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    system("ps -eaf | grep hostapd4.conf | grep -v grep | awk '{print $1}' | xargs kill -9");
-    system("rmmod 8192eu");
-    system("sleep 3");
-    system("modprobe 8192eu");
-    system("sleep 5");
+    wifi_setApEnable(Public2GApIndex, FALSE);
+    wifi_setApEnable(Public2GApIndex, TRUE);
+    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
+}
+
+void wifi_RestartHostapd_5G()
+{
+    int Public5GApIndex = 5;
+
+    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+    wifi_setApEnable(Public5GApIndex, FALSE);
+    wifi_setApEnable(Public5GApIndex, TRUE);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 }
 
 void wifi_RestartPrivateWifi_2G()
 {
+    int PrivateApIndex = 0;
+
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    char buf[512] = {0};
-    char interface_name[512] = {0},rpi_board_status[512] = {0};
-    int count = 0;
-    system("ps -eaf | grep hostapd0.conf | grep -v grep | awk '{print $1}' | xargs kill -9");
-    system("sleep 2");
-    _syscmd("cat /proc/device-tree/model | cut -d ' ' -f5-6",buf,sizeof(buf));
+    wifi_setApEnable(PrivateApIndex, FALSE);
+    wifi_setApEnable(PrivateApIndex, TRUE);
+    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
+}
 
-    for(count = 0;buf[count]!='\n';count++)
-        rpi_board_status[count] = buf[count]; //ajusting the size
+void wifi_RestartPrivateWifi_5G()
+{
+    int Private5GApIndex = 1;
 
-    rpi_board_status[count] = '\0';
-
-    if(strcmp(rpi_board_status,"B Plus") == 0)
-    {
-        GetInterfaceName(interface_name,"/nvram/hostapd0.conf");
-        sprintf(buf,"%s%s%s","ifconfig ",interface_name," down");
-        system(buf);
-    }
-    else
-    {
-        system("rmmod brcmfmac");
-        system("sleep 3");
-        system("modprobe brcmfmac");
-        system("sleep 5");
-    }
+    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+    wifi_setApEnable(Private5GApIndex, FALSE);
+    wifi_setApEnable(Private5GApIndex, TRUE);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 }
 
@@ -4193,41 +4162,35 @@ INT wifi_kickApAclAssociatedDevices(INT apIndex, BOOL enable)
 
 INT wifi_setPreferPrivateConnection(BOOL enable)
 {
-        char interface_name[100] = {0},ssid_cur_value[50] = {0};
-        char buf[1024] = {0};
+    char interface_name[100] = {0},ssid_cur_value[50] = {0};
+    char buf[1024] = {0};
 
-        fprintf(stderr,"%s Value of %d",__FUNCTION__,enable);
-        if(enable == TRUE)
-        {
-                GetInterfaceName(interface_name,"/nvram/hostapd4.conf");
-                sprintf(buf,"ifconfig %s down" ,interface_name);
-                system(buf);
-                memset(buf,0,sizeof(buf));
-                GetInterfaceName(interface_name,"/nvram/hostapd5.conf");
-                sprintf(buf,"ifconfig %s down" ,interface_name);
-                system(buf);
-        }
-        else
-        {
-                File_Reading("cat /tmp/Get5gssidEnable.txt",&ssid_cur_value);
-                if(strcmp(ssid_cur_value,"1") == 0)
-                {
-                        wifi_RestartHostapd_5G(1);
-                        restarthostapd_all("/nvram/hostapd1.conf");
-                }
-                memset(ssid_cur_value,0,sizeof(ssid_cur_value));
-                File_Reading("cat /tmp/GetPub2gssidEnable.txt",&ssid_cur_value);
-                if(strcmp(ssid_cur_value,"1") == 0)
-                {
-                        wifi_RestartHostapd_2G();
-                        restarthostapd_all("/nvram/hostapd4.conf");
-                }
-                memset(ssid_cur_value,0,sizeof(ssid_cur_value));
-                File_Reading("cat /tmp/GetPub5gssidEnable.txt",&ssid_cur_value);
-                if(strcmp(ssid_cur_value,"1") == 0)
-                        restarthostapd_all("/nvram/hostapd5.conf");
-        }
-        return RETURN_OK;
+    fprintf(stderr,"%s Value of %d",__FUNCTION__,enable);
+    if(enable == TRUE)
+    {
+        GetInterfaceName(interface_name,"/nvram/hostapd4.conf");
+        sprintf(buf,"ifconfig %s down" ,interface_name);
+        system(buf);
+        memset(buf,0,sizeof(buf));
+        GetInterfaceName(interface_name,"/nvram/hostapd5.conf");
+        sprintf(buf,"ifconfig %s down" ,interface_name);
+        system(buf);
+    }
+    else
+    {
+        File_Reading("cat /tmp/Get5gssidEnable.txt",&ssid_cur_value);
+        if(strcmp(ssid_cur_value,"1") == 0)
+            wifi_RestartPrivateWifi_5G();
+        memset(ssid_cur_value,0,sizeof(ssid_cur_value));
+        File_Reading("cat /tmp/GetPub2gssidEnable.txt",&ssid_cur_value);
+        if(strcmp(ssid_cur_value,"1") == 0)
+            wifi_RestartHostapd_2G();
+        memset(ssid_cur_value,0,sizeof(ssid_cur_value));
+        File_Reading("cat /tmp/GetPub5gssidEnable.txt",&ssid_cur_value);
+        if(strcmp(ssid_cur_value,"1") == 0)
+            wifi_RestartHostapd_5G();
+    }
+    return RETURN_OK;
 }
 
 
@@ -4937,8 +4900,7 @@ INT wifi_setApWpsEnable(INT apIndex, BOOL enableValue)
         if(apIndex == 0)
             wifi_RestartPrivateWifi_2G();
         else
-            wifi_RestartHostapd_5G(apIndex);
-        restarthostapd_all(Hconf);		
+            wifi_RestartPrivateWifi_5G();
     }
 
     return RETURN_OK;
@@ -5046,8 +5008,7 @@ INT wifi_setApWpsConfigMethodsEnabled(INT apIndex, CHAR *methodString)
         if(apIndex == 0)
             wifi_RestartPrivateWifi_2G();
         else
-            wifi_RestartHostapd_5G(apIndex);
-        restarthostapd_all(Hconf);
+            wifi_RestartPrivateWifi_5G();
     }
     return RETURN_OK;
 }
@@ -5089,9 +5050,7 @@ INT wifi_setApWpsDevicePIN(INT apIndex, ULONG pin)
     if(apIndex == 0)
         wifi_RestartPrivateWifi_2G();
     else
-        wifi_RestartHostapd_5G(apIndex);
-    sprintf(Hconf,"/nvram/hostapd%d.conf",apIndex);
-    restarthostapd_all(Hconf);
+        wifi_RestartPrivateWifi_5G();
 
     return RETURN_OK;
 }    

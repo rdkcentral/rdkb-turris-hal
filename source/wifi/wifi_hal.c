@@ -56,7 +56,11 @@
 #define ACL_PREFIX "/tmp/hostapd-acl"
 //#define ACL_PREFIX "/tmp/wifi_acl_list" //RDKB convention
 #define SOCK_PREFIX "/var/run/hostapd"
+#define VAP_STATUS_FILE "/tmp/vap-status"
+#define DRIVER_2GHZ "ath9k"
+#define DRIVER_5GHZ "ath10k_pci"
 
+#define MAX_APS 4
 #ifndef AP_PREFIX
 #define AP_PREFIX	"wifi"
 #endif
@@ -442,74 +446,43 @@ INT File_Reading(CHAR *file, char *Value)
     return RETURN_OK;
 }
 
-//Restarting the hostapd process
-void restarthostapd_all(char *hostapd_configuration)
-{
-    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    char buf[512] = {0};
-    sprintf(buf,"%s%s%s","ps -eaf | grep ",hostapd_configuration," | grep -v grep | awk '{print $1}' | xargs kill -9");
-    system(buf);
-    system("sleep 3");
-    sprintf(buf,"%s%s","/usr/sbin/hostapd -B ",hostapd_configuration);
-    system(buf);
-    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-}
-
-void wifi_RestartHostapd_5G(INT radioIndex)
-{
-    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-
-    if(radioIndex == 1)
-        system("ps -eaf | grep hostapd1.conf | grep -v grep | awk '{print $1}' | xargs kill -9");
-    else if(radioIndex == 5)
-        system("ps -eaf | grep hostapd5.conf | grep -v grep | awk '{print $1}' | xargs kill -9");
-
-    system("rmmod rtl8812au && rmmod 88x2bu");
-    system("sleep 3");
-    system("modprobe rtl8812au && modprobe 88x2bu");
-    system("sleep 5");
-    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-}
-
 void wifi_RestartHostapd_2G()
 {
+    int Public2GApIndex = 4;
+
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    system("ps -eaf | grep hostapd4.conf | grep -v grep | awk '{print $1}' | xargs kill -9");
-    system("rmmod 8192eu");
-    system("sleep 3");
-    system("modprobe 8192eu");
-    system("sleep 5");
+    wifi_setApEnable(Public2GApIndex, FALSE);
+    wifi_setApEnable(Public2GApIndex, TRUE);
+    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
+}
+
+void wifi_RestartHostapd_5G()
+{
+    int Public5GApIndex = 5;
+
+    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+    wifi_setApEnable(Public5GApIndex, FALSE);
+    wifi_setApEnable(Public5GApIndex, TRUE);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 }
 
 void wifi_RestartPrivateWifi_2G()
 {
+    int PrivateApIndex = 0;
+
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    char buf[512] = {0};
-    char interface_name[512] = {0},rpi_board_status[512] = {0};
-    int count = 0;
-    system("ps -eaf | grep hostapd0.conf | grep -v grep | awk '{print $1}' | xargs kill -9");
-    system("sleep 2");
-    _syscmd("cat /proc/device-tree/model | cut -d ' ' -f5-6",buf,sizeof(buf));
+    wifi_setApEnable(PrivateApIndex, FALSE);
+    wifi_setApEnable(PrivateApIndex, TRUE);
+    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
+}
 
-    for(count = 0;buf[count]!='\n';count++)
-        rpi_board_status[count] = buf[count]; //ajusting the size
+void wifi_RestartPrivateWifi_5G()
+{
+    int Private5GApIndex = 1;
 
-    rpi_board_status[count] = '\0';
-
-    if(strcmp(rpi_board_status,"B Plus") == 0)
-    {
-        GetInterfaceName(interface_name,"/nvram/hostapd0.conf");
-        sprintf(buf,"%s%s%s","ifconfig ",interface_name," down");
-        system(buf);
-    }
-    else
-    {
-        system("rmmod brcmfmac");
-        system("sleep 3");
-        system("modprobe brcmfmac");
-        system("sleep 5");
-    }
+    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+    wifi_setApEnable(Private5GApIndex, FALSE);
+    wifi_setApEnable(Private5GApIndex, TRUE);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 }
 
@@ -1081,126 +1054,90 @@ INT wifi_getSSIDNumberOfEntries(ULONG *output) //Tr181
 //Get the Radio enable config parameter
 INT wifi_getRadioEnable(INT radioIndex, BOOL *output_bool)      //RDKB
 {
-    char cmd[MAX_CMD_SIZE] = {0};
-    char buf[MAX_BUF_SIZE] = {0};
+    char interface_path[MAX_CMD_SIZE] = {0};
 
     if (NULL == output_bool)
         return RETURN_ERR;
 
     *output_bool = FALSE;
-    // Check only supported radios
-    if (!((radioIndex == 0) || (radioIndex == 1)))
+    if (!((radioIndex == 0) || (radioIndex == 1)))// Target has two wifi radios
         return RETURN_ERR;
 
-    snprintf(cmd, sizeof(cmd), "ifconfig %s%d | grep RUNNING ", AP_PREFIX, radioIndex);
-    _syscmd(cmd, buf, sizeof(buf));
-    if(strlen(buf)>0)
-        *output_bool=TRUE;
+    snprintf(interface_path, sizeof(interface_path), "/sys/class/net/%s%d/address", RADIO_PREFIX, radioIndex);
+    if(fopen(interface_path, "r"))
+        *output_bool = TRUE;
 
     //TODO: check if hostapd with config is running
 
     return RETURN_OK;
 }
 
-INT wifi_setRadioEnable(INT radioIndex, BOOL enable)            //RDKB
+INT wifi_setRadioEnable(INT radioIndex, BOOL enable)
 {
-    char IfName[MAX_BUF_SIZE]={'\0'};
-    char HConf_file[MAX_BUF_SIZE]={'\0'};
-    char buf[MAX_BUF_SIZE]={'\0'};
-    char cmd[MAX_CMD_SIZE]={'\0'};
-    char ssid_cur_value[50] ={0};
-    BOOL GetssidEnable;
-    int ret = 0;
+    char cmd[MAX_CMD_SIZE] = {0};
+    char buf[MAX_CMD_SIZE] = {0};
+    int apIndex, ret;
 
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    wifi_getSSIDEnable(radioIndex,&GetssidEnable);
-    if (GetssidEnable == enable)
-        return RETURN_OK;
-
-    if(radioIndex == 0)
+    if(enable==FALSE)
     {
-        sprintf(buf,"%s%d%s","echo ",GetssidEnable," > /tmp/Get2gssidEnable.txt");
-        system("rm /tmp/Get2gRadioEnable.txt");
-        sprintf(cmd,"%s%d%s","echo ",enable," > /tmp/Get2gRadioEnable.txt");
-    }
-    else if(radioIndex == 1)
-    {
-        sprintf(buf,"%s%d%s","echo ",GetssidEnable," > /tmp/Get5gssidEnable.txt");
-        system("rm /tmp/Get5gRadioEnable.txt");
-        sprintf(cmd,"%s%d%s","echo ",enable," > /tmp/Get5gRadioEnable.txt");
-    }
-    system(buf);
-    system(cmd);
-
-    sprintf(HConf_file,"%s%d%s","/nvram/hostapd",radioIndex,".conf");
-    GetInterfaceName(IfName,HConf_file);
-    if(enable == FALSE)
-    {
-        sprintf(cmd,"%s%s%s","ifconfig ",IfName," down");
-        system(cmd);
-        if((radioIndex == 2) || (radioIndex == 3))  //radio interface for backhaul connection for WiFi Extender functionality
+        for(apIndex=radioIndex; apIndex<MAX_APS; apIndex+=2)
         {
-            snprintf(cmd, sizeof(cmd), "hostapd_cli -i global raw REMOVE %s", IfName);
-            ret = _syscmd(cmd, buf, sizeof(buf));
-            if ((ret != 0) || (strlen(buf)<=0) || strncmp("OK", buf, 2))
-                return RETURN_ERR;
+            //Detaching %s%d from hostapd daemon
+            snprintf(cmd, sizeof(cmd), "hostapd_cli -i global raw REMOVE %s%d", AP_PREFIX, apIndex);
+            _syscmd(cmd, buf, sizeof(buf));
+            if(strncmp(buf, "OK", 2))
+                fprintf(stderr, "Could not detach %s%d from hostapd daemon", AP_PREFIX, apIndex);
+            snprintf(cmd, sizeof(cmd), "iw %s%d del", AP_PREFIX, apIndex);
+            _syscmd(cmd, buf, sizeof(buf));
         }
+        snprintf(cmd, sizeof(cmd), "rmmod %s", radioIndex? DRIVER_5GHZ :DRIVER_2GHZ);
+        _syscmd(cmd, buf, sizeof(buf));
+        if(strlen(buf))
+            fprintf(stderr, "Could not remove driver module");
     }
     else
     {
-        sprintf(cmd,"%s%s%s","ps eaf | grep ",HConf_file," | grep -v grep | awk '{print $1}' | xargs kill -9");
-        system(cmd);
-        sprintf(cmd,"%s%s","/usr/sbin/hostapd -B ",HConf_file);
-        if(radioIndex == 0)
-            wifi_RestartPrivateWifi_2G();
-        if(radioIndex == 1) 
-            wifi_RestartHostapd_5G(radioIndex);
-        system("sleep 5");
-        if((radioIndex == 0) || (radioIndex == 1))  //if((SSID.Enable == TRUE ) && (Radio.Enable == TRUE)) then bring's up SSID
+        //Inserting driver for Wifi Radio
+        snprintf(cmd, sizeof(cmd), "modprobe %s", radioIndex? DRIVER_5GHZ :DRIVER_2GHZ);
+        _syscmd(cmd, buf, sizeof(buf));
+        if(strlen(buf))
+            fprintf(stderr, "FATAL: Could not insert driver module");
+        sleep(1);
+        if(radioIndex == 1)//If "wlan0" interface created for 5GHz radio, then need to rename to wlan1
         {
-            if((enable == TRUE) && (GetssidEnable == TRUE))
+            snprintf(cmd, sizeof(cmd), "/sys/class/net/%s%d/address", RADIO_PREFIX, radioIndex);
+            if(!fopen(cmd, "r"))
             {
-                system(cmd);
-            }
-            if(radioIndex == 1)
-            {
-                File_Reading("cat /tmp/GetPub5gssidEnable.txt",&ssid_cur_value);
-                /* GetInterfaceName(IfName,"/nvram/hostapd5.conf");
-                   sprintf(cmd,"%s%s%s","ifconfig ",IfName," | grep UP | tr -s ' ' | cut -d ' ' -f2");
-                   _syscmd(cmd,buf,sizeof(buf));
-                   if((strlen(buf)>0) && (strcmp(ssid_cur_value,"1") == 0))*/
-                if(strcmp(ssid_cur_value,"1") == 0)
-                {
-                    restarthostapd_all("/nvram/hostapd5.conf");
-                }
+                snprintf(cmd, sizeof(cmd), "ip link set %s0 down", RADIO_PREFIX);
+                _syscmd(cmd, buf, sizeof(buf));
+                snprintf(cmd, sizeof(cmd), "ip link set %s0 name %s%d", RADIO_PREFIX, RADIO_PREFIX, radioIndex);
+                _syscmd(cmd, buf, sizeof(buf));
             }
         }
-        else if((radioIndex == 2) || (radioIndex == 3))  //radio interface for backhaul connection for WiFi Extender functionality
+        for(apIndex=radioIndex; apIndex<MAX_APS; apIndex+=2)
         {
-            snprintf(cmd, sizeof(cmd), "hostapd_cli -i global raw ADD bss_config=%s:%s", IfName, HConf_file);
+            snprintf(cmd, sizeof(cmd), "iw %s%d interface add %s%d type __ap", RADIO_PREFIX, radioIndex, AP_PREFIX, apIndex);
             ret = _syscmd(cmd, buf, sizeof(buf));
-            if ((ret != 0) || (strlen(buf)<=0) || strncmp("OK", buf, 2))
-                return RETURN_ERR;
-        }
-#if 0
-        else if ((radioIndex == 4) || (radioIndex == 5))
-        {
-            system(cmd);
-            if(radioIndex == 5)
+            if ( ret == RETURN_ERR)
             {
-                GetInterfaceName(IfName,"/nvram/hostapd1.conf");
-                sprintf(cmd,"%s%s%s","ifconfig ",IfName," | grep UP | tr -s ' ' | cut -d ' ' -f2");
-                _syscmd(cmd,buf,sizeof(buf));
-                if(strlen(buf)>0)
-                {
-                    system("ps -eaf | grep hostapd1.conf | grep -v grep | awk '{print $1}' | xargs kill -9");
-                    system("sleep 3");
-                    system("/usr/sbin/hostapd -B /nvram/hostapd1.conf");
-                }
+                fprintf(stderr, "VAP interface creation failed\n");
+                continue;
+            }
+            snprintf(cmd, sizeof(cmd), "cat %s | grep %s%d | cut -d'=' -f2", VAP_STATUS_FILE, AP_PREFIX, apIndex);
+            _syscmd(cmd, buf, sizeof(buf));
+            if(*buf == '1')
+            {
+                snprintf(cmd, sizeof(cmd), "hostapd_cli -i global raw ADD bss_config=%s%d:/nvram/hostapd%d.conf",
+                              AP_PREFIX, apIndex, apIndex);
+                _syscmd(cmd, buf, sizeof(buf));
+                if(strncmp(buf, "OK", 2))
+                    fprintf(stderr, "Could not detach %s%d from hostapd daemon", AP_PREFIX, apIndex);
             }
         }
-#endif
     }
+
+    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
     return RETURN_OK;
 }
 
@@ -2756,21 +2693,28 @@ INT wifi_getSSIDRadioIndex(INT ssidIndex, INT *radioIndex)
     return RETURN_OK;
 }
 
+//Device.WiFi.SSID.{i}.Enable
 //Get SSID enable configuration parameters (not the SSID enable status)
 INT wifi_getSSIDEnable(INT ssidIndex, BOOL *output_bool) //Tr181
 {
     if (NULL == output_bool) 
         return RETURN_ERR;
 
+    //For this target, mapping SSID Index 13 & 14 to 2 & 3 respectively.
+    if(ssidIndex==13 || ssidIndex==14) ssidIndex -= 11;
     return wifi_getApEnable(ssidIndex, output_bool);
 }
 
+//Device.WiFi.SSID.{i}.Enable
 //Set SSID enable configuration parameters
 INT wifi_setSSIDEnable(INT ssidIndex, BOOL enable) //Tr181
 {
+    //For this target, mapping SSID Index 13 & 14 to 2 & 3 respectively.
+    if(ssidIndex==13 || ssidIndex==14) ssidIndex -= 11;
     return wifi_setApEnable(ssidIndex, enable);
 }
 
+//Device.WiFi.SSID.{i}.Status
 //Get the SSID enable status
 INT wifi_getSSIDStatus(INT ssidIndex, CHAR *output_string) //Tr181
 {
@@ -2781,6 +2725,9 @@ INT wifi_getSSIDStatus(INT ssidIndex, CHAR *output_string) //Tr181
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     if (NULL == output_string)
         return RETURN_ERR;
+    //For this target, mapping SSID Index 13 & 14 to 2 & 3 respectively.
+    if(ssidIndex==13 || ssidIndex==14) ssidIndex -= 11;
+
     wifi_getApEnable(ssidIndex,&output_bool);
     snprintf(output_string, 32, output_bool==1?"Enabled":"Disabled");
 
@@ -4215,41 +4162,35 @@ INT wifi_kickApAclAssociatedDevices(INT apIndex, BOOL enable)
 
 INT wifi_setPreferPrivateConnection(BOOL enable)
 {
-        char interface_name[100] = {0},ssid_cur_value[50] = {0};
-        char buf[1024] = {0};
+    char interface_name[100] = {0},ssid_cur_value[50] = {0};
+    char buf[1024] = {0};
 
-        fprintf(stderr,"%s Value of %d",__FUNCTION__,enable);
-        if(enable == TRUE)
-        {
-                GetInterfaceName(interface_name,"/nvram/hostapd4.conf");
-                sprintf(buf,"ifconfig %s down" ,interface_name);
-                system(buf);
-                memset(buf,0,sizeof(buf));
-                GetInterfaceName(interface_name,"/nvram/hostapd5.conf");
-                sprintf(buf,"ifconfig %s down" ,interface_name);
-                system(buf);
-        }
-        else
-        {
-                File_Reading("cat /tmp/Get5gssidEnable.txt",&ssid_cur_value);
-                if(strcmp(ssid_cur_value,"1") == 0)
-                {
-                        wifi_RestartHostapd_5G(1);
-                        restarthostapd_all("/nvram/hostapd1.conf");
-                }
-                memset(ssid_cur_value,0,sizeof(ssid_cur_value));
-                File_Reading("cat /tmp/GetPub2gssidEnable.txt",&ssid_cur_value);
-                if(strcmp(ssid_cur_value,"1") == 0)
-                {
-                        wifi_RestartHostapd_2G();
-                        restarthostapd_all("/nvram/hostapd4.conf");
-                }
-                memset(ssid_cur_value,0,sizeof(ssid_cur_value));
-                File_Reading("cat /tmp/GetPub5gssidEnable.txt",&ssid_cur_value);
-                if(strcmp(ssid_cur_value,"1") == 0)
-                        restarthostapd_all("/nvram/hostapd5.conf");
-        }
-        return RETURN_OK;
+    fprintf(stderr,"%s Value of %d",__FUNCTION__,enable);
+    if(enable == TRUE)
+    {
+        GetInterfaceName(interface_name,"/nvram/hostapd4.conf");
+        sprintf(buf,"ifconfig %s down" ,interface_name);
+        system(buf);
+        memset(buf,0,sizeof(buf));
+        GetInterfaceName(interface_name,"/nvram/hostapd5.conf");
+        sprintf(buf,"ifconfig %s down" ,interface_name);
+        system(buf);
+    }
+    else
+    {
+        File_Reading("cat /tmp/Get5gssidEnable.txt",&ssid_cur_value);
+        if(strcmp(ssid_cur_value,"1") == 0)
+            wifi_RestartPrivateWifi_5G();
+        memset(ssid_cur_value,0,sizeof(ssid_cur_value));
+        File_Reading("cat /tmp/GetPub2gssidEnable.txt",&ssid_cur_value);
+        if(strcmp(ssid_cur_value,"1") == 0)
+            wifi_RestartHostapd_2G();
+        memset(ssid_cur_value,0,sizeof(ssid_cur_value));
+        File_Reading("cat /tmp/GetPub5gssidEnable.txt",&ssid_cur_value);
+        if(strcmp(ssid_cur_value,"1") == 0)
+            wifi_RestartHostapd_5G();
+    }
+    return RETURN_OK;
 }
 
 
@@ -4359,10 +4300,6 @@ INT wifi_startHostApd()
 {
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     system("systemctl start hostapd.service");
-    system("echo 1 > /tmp/Get2gssidEnable.txt");
-    system("echo 1 > /tmp/Get5gssidEnable.txt");
-    //system("echo 1 > /tmp/GetPub2gssidEnable.txt");
-    //system("echo 1 > /tmp/GetPub5gssidEnable.txt");
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
     return RETURN_OK;
     //sprintf(cmd, "hostapd  -B `cat /tmp/conf_filename` -e /nvram/etc/wpa2/entropy -P /tmp/hostapd.pid 1>&2");
@@ -4396,7 +4333,6 @@ INT wifi_setApEnable(INT apIndex, BOOL enable)
     char config_file[MAX_BUF_SIZE] = {0};
     char cmd[MAX_CMD_SIZE] = {0};
     char buf[MAX_BUF_SIZE] = {0};
-    int ret = 0;
 
     if (enable == TRUE) {
         sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
@@ -4410,7 +4346,10 @@ INT wifi_setApEnable(INT apIndex, BOOL enable)
         sprintf(cmd, "ip link set %s%d down", AP_PREFIX, apIndex);
         _syscmd(cmd, buf, sizeof(buf));
     }
-    //Store the AP enable settings and wait for wifi up to apply
+    snprintf(cmd, sizeof(cmd), "sed '/%s%d/c %s%d=%d' -i %s",
+                  AP_PREFIX, apIndex, AP_PREFIX, apIndex, enable, VAP_STATUS_FILE);
+    _syscmd(cmd, buf, sizeof(buf));
+    //Wait for wifi up/down to apply
     return RETURN_OK;
 }
 
@@ -4418,59 +4357,21 @@ INT wifi_setApEnable(INT apIndex, BOOL enable)
 INT wifi_getApEnable(INT apIndex, BOOL *output_bool)
 {
     char cmd[MAX_CMD_SIZE] = {'\0'};
-    char HConf_file[MAX_BUF_SIZE] = {'\0'};
-    char path[MAX_BUF_SIZE] = {'\0'};
-    char IfName[MAX_BUF_SIZE] = {'\0'};
     char buf[MAX_BUF_SIZE] = {'\0'};
-    char tmp_status[MAX_BUF_SIZE] = {'\0'};
-    int count = 0;
-    FILE *fp = NULL;
 
-    if((!output_bool) || (apIndex < 0))
+    if((!output_bool) || (apIndex < 0) || (apIndex > 15))
         return RETURN_ERR;
 
-    //retValue = wifi_getRadioEnable(apIndex, output_bool);
-    if((apIndex == 0) || (apIndex == 1) || (apIndex == 4) || (apIndex == 5))
+    if((apIndex >= 0) && (apIndex <= 3))//Handling 4 APs
     {
-        sprintf(HConf_file,"%s%d%s","/nvram/hostapd",apIndex,".conf");
-        GetInterfaceName(IfName,HConf_file);
-        sprintf(cmd,"%s%s%s","ifconfig ",IfName," | grep RUNNING | tr -s ' ' | cut -d ' ' -f4");
+        sprintf(cmd, "%s%s%d%s", "ifconfig ", AP_PREFIX, apIndex, " | grep RUNNING");
         _syscmd(cmd,buf,sizeof(buf));
-        if(strlen(buf)>0)
-        {
-            *output_bool=1;
-            return RETURN_OK;
-        }
-        if(apIndex == 0)
-            fp = fopen("/tmp/Get2gssidEnable.txt","r");
-        else if(apIndex == 1)
-            fp = fopen("/tmp/Get5gssidEnable.txt","r");
-        else if(apIndex == 4)
-            fp = fopen("/tmp/GetPub2gssidEnable.txt","r");
-        else if(apIndex == 5)
-            fp = fopen("/tmp/GetPub5gssidEnable.txt","r");
-        if(fp == NULL)
-        {
-            *output_bool = 0;
-            return RETURN_OK;
-        }
-        if(fgets(path, sizeof(path)-1, fp) != NULL)
-        {
-            for(count=0;path[count]!='\n';count++)
-                tmp_status[count]=path[count];
-            tmp_status[count]='\0';
-        }
-        fclose(fp);
-        if(strcmp(tmp_status,"0") == 0)
-            *output_bool = 0;
-        else
-            *output_bool = 1;
-        return RETURN_OK;
+        *output_bool = (strlen(buf)>0)?1:0;
     }
-    if((apIndex > 5 ) && (apIndex < 17))
-        return RETURN_OK;
+    else if(apIndex > 3)//APs(4-15) are not supported yet
+        *output_bool = 0;
 
-    return RETURN_ERR;
+    return RETURN_OK;
 }
 
 // Outputs the AP "Enabled" "Disabled" status from driver 
@@ -4999,8 +4900,7 @@ INT wifi_setApWpsEnable(INT apIndex, BOOL enableValue)
         if(apIndex == 0)
             wifi_RestartPrivateWifi_2G();
         else
-            wifi_RestartHostapd_5G(apIndex);
-        restarthostapd_all(Hconf);		
+            wifi_RestartPrivateWifi_5G();
     }
 
     return RETURN_OK;
@@ -5108,8 +5008,7 @@ INT wifi_setApWpsConfigMethodsEnabled(INT apIndex, CHAR *methodString)
         if(apIndex == 0)
             wifi_RestartPrivateWifi_2G();
         else
-            wifi_RestartHostapd_5G(apIndex);
-        restarthostapd_all(Hconf);
+            wifi_RestartPrivateWifi_5G();
     }
     return RETURN_OK;
 }
@@ -5151,9 +5050,7 @@ INT wifi_setApWpsDevicePIN(INT apIndex, ULONG pin)
     if(apIndex == 0)
         wifi_RestartPrivateWifi_2G();
     else
-        wifi_RestartHostapd_5G(apIndex);
-    sprintf(Hconf,"/nvram/hostapd%d.conf",apIndex);
-    restarthostapd_all(Hconf);
+        wifi_RestartPrivateWifi_5G();
 
     return RETURN_OK;
 }    

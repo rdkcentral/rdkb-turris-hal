@@ -8231,6 +8231,14 @@ INT wifi_getSTANetworks(INT apIndex, wifi_staNetwork_t **out_staNetworks_array, 
 }
 #endif
 
+INT wifi_getRadioPercentageTransmitPower(INT apIndex, ULONG *txpwr_pcntg)
+{
+    //TO-Do Implement this
+    txpwr_pcntg = 0;
+    return RETURN_OK;
+}
+
+
 #ifdef _WIFI_HAL_TEST_
 int main(int argc,char **argv)
 {

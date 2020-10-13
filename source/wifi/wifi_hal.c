@@ -55,12 +55,12 @@
 #define CONFIG_PREFIX "/nvram/hostapd"
 #define ACL_PREFIX "/tmp/hostapd-acl"
 //#define ACL_PREFIX "/tmp/wifi_acl_list" //RDKB convention
-#define SOCK_PREFIX "/var/run/hostapd"
+#define SOCK_PREFIX "/var/run/hostapd/wifi"
 #define VAP_STATUS_FILE "/tmp/vap-status"
 #define DRIVER_2GHZ "ath9k"
 #define DRIVER_5GHZ "ath10k_pci"
 
-#define MAX_APS 4
+#define MAX_APS 6
 #ifndef AP_PREFIX
 #define AP_PREFIX	"wifi"
 #endif
@@ -80,7 +80,7 @@
  * This enables key identifier support in associated device event.
  * Key identifier support requires new associated device structure.
  */
-//#define MULTI_PSK
+#define MULTI_PSK
 
 #ifdef WIFI_DEBUG
 #define wifi_dbg_printf printf
@@ -355,10 +355,11 @@ static int wifi_hostapdProcessUpdate(int apIndex, struct params *list, int item_
     char cmd[MAX_CMD_SIZE]="", output[32]="";
     FILE *fp;
     int i;
+    //NOTE RELOAD should be done in ApplySSIDSettings
 
     for(i=0; i<item_count; i++, list++)
     {
-        snprintf(cmd, sizeof(cmd), "hostapd_cli -i%s%d DISABLE", AP_PREFIX, apIndex);
+/*        snprintf(cmd, sizeof(cmd), "hostapd_cli -i%s%d DISABLE", AP_PREFIX, apIndex);
         if((fp = popen(cmd, "r"))==NULL)
         {
             perror("popen failed");
@@ -368,7 +369,7 @@ static int wifi_hostapdProcessUpdate(int apIndex, struct params *list, int item_
         {
             perror("fgets failed");
             return -1;
-        }
+        }*/
         snprintf(cmd, sizeof(cmd), "hostapd_cli -i%s%d SET %s %s", AP_PREFIX, apIndex, list->name, list->value);
         if((fp = popen(cmd, "r"))==NULL)
         {
@@ -380,7 +381,7 @@ static int wifi_hostapdProcessUpdate(int apIndex, struct params *list, int item_
             perror("fgets failed");
             return -1;
         }
-        snprintf(cmd, sizeof(cmd), "hostapd_cli -i%s%d ENABLE", AP_PREFIX, apIndex);
+/*        snprintf(cmd, sizeof(cmd), "hostapd_cli -i%s%d ENABLE", AP_PREFIX, apIndex);
         if((fp = popen(cmd, "r"))==NULL)
         {
             perror("popen failed");
@@ -401,7 +402,7 @@ static int wifi_hostapdProcessUpdate(int apIndex, struct params *list, int item_
         {
             perror("fgets failed");
             return -1;
-        }
+        }*/
     }
     return 0;
 }
@@ -1046,7 +1047,7 @@ INT wifi_getSSIDNumberOfEntries(ULONG *output) //Tr181
 {
     if (NULL == output)
         return RETURN_ERR;
-    *output = 6;//For WiFi Extender feature, we have 6 SSIDs for now. TODO: we may need to add more in future
+    *output = MAX_APS;//For WiFi Extender feature, we have 6 SSIDs for now. TODO: we may need to add more in future
 
     return RETURN_OK;
 }
@@ -1128,8 +1129,8 @@ INT wifi_setRadioEnable(INT radioIndex, BOOL enable)
             _syscmd(cmd, buf, sizeof(buf));
             if(*buf == '1')
             {
-                snprintf(cmd, sizeof(cmd), "hostapd_cli -i global raw ADD bss_config=%s%d:/nvram/hostapd%d.conf",
-                              AP_PREFIX, apIndex, apIndex);
+                snprintf(cmd, sizeof(cmd), "hostapd_cli -i global raw ADD bss_config=phy%d:/nvram/hostapd%d.conf",
+                              apIndex, apIndex);
                 _syscmd(cmd, buf, sizeof(buf));
                 if(strncmp(buf, "OK", 2))
                     fprintf(stderr, "Could not detach %s%d from hostapd daemon", AP_PREFIX, apIndex);
@@ -1598,7 +1599,8 @@ INT wifi_getRadioPossibleChannels(INT radioIndex, CHAR *output_string)	//RDKB
 {
     if (NULL == output_string) 
         return RETURN_ERR;
-    snprintf(output_string, 64, (radioIndex == 0)?"1-11":"36,40");
+    //TODO:read this from iw phy phyX info |grep MHz
+    snprintf(output_string, 64, (radioIndex == 0)?"1,2,3,4,5,6,7,8,9,10,11":"36,40,44,48,52,56,60,64,100,104,108,112,116,120,124,128,132,136,140");
 #if 0
     char IFName[50] ={0};
     char buf[MAX_BUF_SIZE] = {0};
@@ -1664,24 +1666,43 @@ INT wifi_getRadioChannelsInUse(INT radioIndex, CHAR *output_string)	//RDKB
 //Get the running channel number 
 INT wifi_getRadioChannel(INT radioIndex,ULONG *output_ulong)	//RDKB
 {
-    char cmd[1024] = {0}, buf[4] = {0};
-    char HConf_file[MAX_BUF_SIZE] = {'\0'}, interface_name[50] = {0};
+    char cmd[1024] = {0}, buf[5] = {0};
+    char interface_name[50] = {0};
 
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     if (NULL == output_ulong)
         return RETURN_ERR;
 
-    sprintf(HConf_file,"%s%d%s","/nvram/hostapd",radioIndex,".conf");
-    GetInterfaceName(interface_name,HConf_file);
+    wifi_getApName(radioIndex,interface_name);
 
-    snprintf(cmd, sizeof(cmd), "%s%s%s","iw dev ",interface_name," info | grep 'channel' | cut -d ' ' -f2");
+    snprintf(cmd, sizeof(cmd), "ls -1 /sys/class/net/%s/device/ieee80211/phy*/device/net/ | xargs -I {} iw dev {} info |grep channel | head -n1 | cut -d ' ' -f2",interface_name);
     _syscmd(cmd,buf,sizeof(buf));
 
     *output_ulong = (strlen(buf) >= 1)? atol(buf): 0;
     if (*output_ulong <= 0) {
-        //TODO: SSID is inactive, get channel from wifi config
-        //FIXME: return valid value
         *output_ulong = 0;
+        return RETURN_ERR;
+    }
+
+    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
+    return RETURN_OK;
+}
+
+
+INT wifi_getApChannel(INT apIndex,ULONG *output_ulong) //RDKB
+{
+    char cmd[1024] = {0}, buf[5] = {0};
+    char interface_name[50] = {0};
+
+    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+    if (NULL == output_ulong)
+        return RETURN_ERR;
+
+    wifi_getApName(apIndex,interface_name);
+    snprintf(cmd, sizeof(cmd), "iw dev %s info |grep channel | cut -d ' ' -f2",interface_name);
+    _syscmd(cmd,buf,sizeof(buf));
+    *output_ulong = (strlen(buf) >= 1)? atol(buf): 0;
+    if (*output_ulong == 0) {
         return RETURN_ERR;
     }
 
@@ -1744,8 +1765,13 @@ INT wifi_setRadioChannel(INT radioIndex, ULONG channel)	//RDKB	//AP only
                 return RETURN_ERR;
         }
     }
-    sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex);
-    wifi_hostapdWrite(config_file,&list,1);
+
+    for(int i=0; i<=2;i++)
+    {
+        sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,radioIndex+(2*i));
+        wifi_hostapdWrite(config_file,&list,1);
+    }
+
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
     return RETURN_OK;
     //Set to wifi config only. Wait for wifi reset or wifi_pushRadioChannel to apply.
@@ -2780,7 +2806,7 @@ INT wifi_getBaseBSSID(INT ssidIndex, CHAR *output_string)	//RDKB
     if (NULL == output_string)
         return RETURN_ERR;
 
-    if(ssidIndex == 0 || ssidIndex == 1 || ssidIndex == 2 || ssidIndex ==3)
+    if(ssidIndex >= 0 && ssidIndex < MAX_APS)
     {
         snprintf(cmd, sizeof(cmd), "iw dev %s%d info |grep addr | awk '{printf $2}'", AP_PREFIX, ssidIndex);
         _syscmd(cmd, output_string, 64);
@@ -2803,6 +2829,21 @@ INT wifi_getSSIDMACAddress(INT ssidIndex, CHAR *output_string) //Tr181
 //Not all implementations may need this function.  If not needed for a particular implementation simply return no-error (0)
 INT wifi_applySSIDSettings(INT ssidIndex)
 {
+    char cmd[MAX_CMD_SIZE]="";
+    char buf[MAX_BUF_SIZE]="";
+
+    snprintf(cmd, sizeof(cmd), "hostapd_cli -i %s%d reload", AP_PREFIX, ssidIndex);
+    if (_syscmd(cmd, buf, sizeof(buf)) == RETURN_ERR)
+        return RETURN_ERR;
+
+    snprintf(cmd, sizeof(cmd), "hostapd_cli -i %s%d disable", AP_PREFIX, ssidIndex);
+    if (_syscmd(cmd, buf, sizeof(buf)) == RETURN_ERR)
+        return RETURN_ERR;
+
+    snprintf(cmd, sizeof(cmd), "hostapd_cli -i %s%d enable", AP_PREFIX, ssidIndex);
+    if (_syscmd(cmd, buf, sizeof(buf)) == RETURN_ERR)
+        return RETURN_ERR;
+
     return RETURN_OK;
 }
 
@@ -4327,17 +4368,30 @@ INT wifi_restartHostApd()
     return RETURN_OK;
 }
 
+static int align_hostapd_config(int index)
+{
+    ULONG lval;
+    wifi_getRadioChannel(index%2, &lval);
+    wifi_setRadioChannel(index%2, lval);
+}
+
 // sets the AP enable status variable for the specified ap.
 INT wifi_setApEnable(INT apIndex, BOOL enable)
 {
     char config_file[MAX_BUF_SIZE] = {0};
     char cmd[MAX_CMD_SIZE] = {0};
     char buf[MAX_BUF_SIZE] = {0};
+    BOOL status;
+
+/*    wifi_getApEnable(apIndex,&status);
+    if (enable == status)
+        return RETURN_OK; */
 
     if (enable == TRUE) {
+        align_hostapd_config(apIndex);
         sprintf(config_file,"%s%d.conf",CONFIG_PREFIX,apIndex);
         //Hostapd will bring up this interface
-        sprintf(cmd, "hostapd_cli -i global raw ADD bss_config=%s%d:%s", AP_PREFIX, apIndex, config_file);
+        sprintf(cmd, "hostapd_cli -i global raw ADD bss_config=phy%d:%s", apIndex, config_file);
         _syscmd(cmd, buf, sizeof(buf));
     }
     else {
@@ -4362,11 +4416,10 @@ INT wifi_getApEnable(INT apIndex, BOOL *output_bool)
     if((!output_bool) || (apIndex < 0) || (apIndex > 15))
         return RETURN_ERR;
 
-    if((apIndex >= 0) && (apIndex <= 3))//Handling 4 APs
+    if((apIndex >= 0) && (apIndex <= 5))//Handling 6 APs
     {
-        sprintf(cmd, "%s%s%d%s", "ifconfig ", AP_PREFIX, apIndex, " | grep RUNNING");
-        _syscmd(cmd,buf,sizeof(buf));
-        *output_bool = (strlen(buf)>0)?1:0;
+        sprintf(cmd, "%s%s%d%s", "ifconfig ", AP_PREFIX, apIndex, " | grep UP");
+        *output_bool = _syscmd(cmd,buf,sizeof(buf))?0:1;
     }
     else if(apIndex > 3)//APs(4-15) are not supported yet
         *output_bool = 0;
@@ -6390,12 +6443,14 @@ static INT chan_to_freq(int radioIndex, UINT channel, int *freq)
     char cmd[MAX_CMD_SIZE] = {0};
     char buf[MAX_BUF_SIZE] = {0};
     int ret = 0;
-
-    sprintf(cmd, "iwlist %s%d channel |grep %02d |awk '{print $4}'  | tr -d '.'", RADIO_PREFIX, radioIndex, channel);
+    //TODO: provide better implementation
+    sprintf(cmd, "iwlist %s%d channel |grep 'Channel %02d ' |awk '{print $4}'  | tr -d '.'", RADIO_PREFIX, radioIndex, channel);
     ret = _syscmd(cmd, buf, sizeof(buf));
     if ((ret != 0) && (strlen(buf) == 0))
             return RETURN_ERR;
     sscanf(buf, "%d", freq);
+    if(*freq < 1000)
+        *freq= *freq*10;
 
     return RETURN_OK;
 }
@@ -6411,11 +6466,16 @@ INT wifi_pushRadioChannel2(INT radioIndex, UINT channel, UINT channel_width_MHz,
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     if(chan_to_freq(radioIndex, channel, &freq) == RETURN_ERR)
         return RETURN_ERR;
-    //snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d sec_channel_offset=1 center_freq1=%f bandwidth=%d %s", RADIO_PREFIX, radioIndex, csa_beacon_count, freq, channel_width_MHz, vht);
-    snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d ", RADIO_PREFIX, radioIndex, csa_beacon_count, freq);
+    //Send chan_switch to all VAPs
+    snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d ", AP_PREFIX, radioIndex, csa_beacon_count, freq);
     ret = _syscmd(cmd, buf, sizeof(buf));
-    if ((ret != 0) && (strlen(buf) == 0))
-        return RETURN_ERR;
+    snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d ", AP_PREFIX, radioIndex+2, csa_beacon_count, freq);
+    ret = _syscmd(cmd, buf, sizeof(buf));
+    snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d ", AP_PREFIX, radioIndex+4, csa_beacon_count, freq);
+    ret = _syscmd(cmd, buf, sizeof(buf));
+
+    //snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d sec_channel_offset=1 center_freq1=%f bandwidth=%d %s", RADIO_PREFIX, radioIndex, csa_beacon_count, freq, channel_width_MHz, vht);
+    wifi_setRadioChannel(radioIndex,channel);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 
     return RETURN_OK;
@@ -7986,7 +8046,7 @@ INT wifi_setRMBeaconRequest(UINT apIndex, CHAR *peer, wifi_BeaconRequest_t *in_r
 INT wifi_getRadioChannels(INT radioIndex, wifi_channelMap_t *outputMap, INT outputMapSize)
 {
     // TODO Implement me!
-    return RETURN_ERR;
+    return RETURN_OK;
 }
 
 INT wifi_chan_eventRegister(wifi_chan_eventCB_t eventCb)
@@ -8149,95 +8209,6 @@ close:
 }
 #endif
 /* end of multi-psk support */
-
-#ifdef _TURRIS_EXTENDER_
-/* client API */
-INT wifi_getSTANumberOfEntries(ULONG *output) //Tr181
-{
-    if (NULL == output)
-        return RETURN_ERR;
-
-    *output = 2;
-    return RETURN_OK;
-}
-
-INT wifi_getSTAName(INT apIndex, CHAR *output_string)
-{
-    if (NULL == output_string)
-        return RETURN_ERR;
-    if(apIndex == 0)
-        snprintf(output_string, 16, "bhaul-sta-24");
-    else
-        snprintf(output_string, 16, "bhaul-sta-50");
-
-    return RETURN_OK;
-}
-
-INT wifi_getSTARadioIndex(INT ssidIndex, INT *radioIndex)
-{
-    if (NULL == radioIndex)
-        return RETURN_ERR;
-    *radioIndex = ssidIndex%2;
-    return RETURN_OK;
-}
-
-INT wifi_getSTAMAC(INT ssidIndex, CHAR *output_string)
-{
-    char cmd[128] = {0};
-    int ret = 0;
-    char ssid_ifname[128];
-
-    if (NULL == output_string)
-        return RETURN_ERR;
-
-    ret = wifi_getSTAName(ssidIndex, ssid_ifname);
-    if (ret != RETURN_OK)
-    {
-        return RETURN_ERR;
-    }
-
-    sprintf(cmd, "wpa_cli -i%s status |grep '^address' | cut -f 2 -d =", ssid_ifname);
-    _syscmd(cmd, output_string, 64);
-
-    return RETURN_OK;
-
-}
-
-INT wifi_getSTABSSID(INT ssidIndex, CHAR *output_string)
-{
-    char cmd[128] = {0};
-    int ret = 0;
-    char ssid_ifname[128];
-
-    if (NULL == output_string)
-        return RETURN_ERR;
-
-    ret = wifi_getSTAName(ssidIndex, ssid_ifname);
-    if (ret != RETURN_OK)
-    {
-        return RETURN_ERR;
-    }
-
-    sprintf(cmd, "wpa_cli -i%s status |grep bssid | cut -f 2 -d =", ssid_ifname);
-    _syscmd(cmd, output_string, 64);
-
-    return RETURN_OK;
-
-}
-
-INT wifi_getSTANetworks(INT apIndex, wifi_staNetwork_t **out_staNetworks_array, INT out_array_size, BOOL *out_scan_cur_freq)
-{
-    return RETURN_OK;
-}
-#endif
-
-INT wifi_getRadioPercentageTransmitPower(INT apIndex, ULONG *txpwr_pcntg)
-{
-    //TO-Do Implement this
-    txpwr_pcntg = 0;
-    return RETURN_OK;
-}
-
 
 #ifdef _WIFI_HAL_TEST_
 int main(int argc,char **argv)

@@ -8071,6 +8071,13 @@ INT wifi_switchBand(char *interface_name,INT radioIndex,char *freqBand)
     return RETURN_ERR;
 }
 
+INT wifi_getRadioPercentageTransmitPower(INT apIndex, ULONG *txpwr_pcntg)
+{
+    //TO-Do Implement this
+    txpwr_pcntg = 0;
+    return RETURN_OK;
+}
+
 /* multi-psk support */
 #ifdef MULTI_PSK
 void wifi_newApAssociatedDevice_callback_register2(wifi_newApAssociatedDevice_callback2 callback_proc)

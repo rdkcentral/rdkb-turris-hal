@@ -7200,8 +7200,35 @@ INT wifi_getApAssociatedDeviceTidStatsResult(INT radioIndex,  mac_address_t *cli
 
 INT wifi_startNeighborScan(INT apIndex, wifi_neighborScanMode_t scan_mode, INT dwell_time, UINT chan_num, UINT *chan_list)
 {
-    // TODO Implement me!
-    return RETURN_OK;
+    INT status = RETURN_ERR;
+    UINT index;
+    char cmd[256]={0};
+
+   WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+   if (scan_mode == WIFI_RADIO_SCAN_MODE_ONCHAN)
+    {   
+        return RETURN_OK;
+    }
+
+     /* If channels are not specified use default driver params */
+    if (chan_num)
+    {
+      uint32_t    chan_index;
+
+       for (chan_index = 0; chan_index < chan_num; chan_index++)
+           {   
+     		snprintf(cmd,sizeof(cmd),  "iw dev %s%d scan -u freq %u passive >> /tmp/%u.txt ", RADIO_PREFIX, apIndex%2, chan_list[chan_index],chan_list[chan_index]);
+        	system(cmd);
+           }
+
+      }else { 
+      snprintf(cmd, sizeof(cmd),  "iw dev %s%d scan -u freq passive >> /tmp/scan_results.txt ", RADIO_PREFIX, apIndex%2 );
+      system(cmd);
+
+    }
+
+
+	return RETURN_OK;
 }
 
 
@@ -8424,6 +8451,31 @@ int main(int argc,char **argv)
         wifi_getAssociatedDeviceDetail(index,dev_index,&output_struct);
         mac_addr_ntoa(mac_addr,output_struct.wifi_devMacAddress);
         printf("wifi_devMacAddress=%s \t wifi_devAssociatedDeviceAuthentiationState=%d \t, wifi_devSignalStrength=%d \t,wifi_devTxRate=%d \t, wifi_devRxRate =%d \t\n ", mac_addr,output_struct.wifi_devAssociatedDeviceAuthentiationState,output_struct.wifi_devSignalStrength,output_struct.wifi_devTxRate,output_struct.wifi_devRxRate);
+    }
+	
+   if(strstr(argv[1],"wifi_startNeighborScan")!=NULL)
+    {
+	int args_index = 0;
+        if(argc <= 5 )
+        {
+
+    	 printf("Insufficient arguments , usage :: \n");  
+         printf(" wifihal wifi_startNeighborScan [apindex (0-15)] [scanmode (0 to 4)] [dwelltime] [channel_listcount] [ channel-list]... \n");    
+	 exit(-1);
+        }
+
+        INT apindex = atoi(argv[2]);
+        wifi_neighborScanMode_t scan_mode = atoi(argv[3]);
+        INT dwell_time = atoi(argv[4]);
+        UINT chan_num = atoi(argv[5]);
+	UINT *chan_list = (UINT *) malloc((argc-5)*sizeof(UINT));
+
+	for( args_index=0 ; args_index < argc-6 ; args_index++ ){
+      		chan_list[args_index] = (UINT)atoi(argv[args_index+6]);
+        }
+
+      wifi_startNeighborScan(apindex, scan_mode, dwell_time, chan_num, chan_list);
+
     }
 
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);

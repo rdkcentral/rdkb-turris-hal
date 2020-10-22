@@ -7222,7 +7222,7 @@ INT wifi_startNeighborScan(INT apIndex, wifi_neighborScanMode_t scan_mode, INT d
            }
 
       }else { 
-      snprintf(cmd, sizeof(cmd),  "iw dev %s%d scan -u freq passive >> /tmp/scan_results.txt ", RADIO_PREFIX, apIndex%2 );
+      snprintf(cmd, sizeof(cmd),  "iw dev %s%d scan passive >> /tmp/scan_results.txt ", RADIO_PREFIX, apIndex%2 );
       system(cmd);
 
     }

@@ -6039,7 +6039,7 @@ INT wifi_getApInactiveAssociatedDeviceDiagnosticResult(char *filename,wifi_assoc
 //To get Band Steering Capability
 INT wifi_getBandSteeringCapability(BOOL *support)
 {
-    *support = FALSE;
+    *support = TRUE;
     return RETURN_OK;
 }
 
@@ -6048,13 +6048,53 @@ INT wifi_getBandSteeringCapability(BOOL *support)
 //To get Band Steering enable status
 INT wifi_getBandSteeringEnable(BOOL *enable)
 {
-    *enable = FALSE;
+    char cmd[MAX_CMD_SIZE] = {0};
+    char buf[MAX_BUF_SIZE] = {0};
+    int ret = 0;
+    sprintf(cmd,"syscfg get BS_ENABLE");
+    ret = _syscmd(cmd, buf, sizeof(buf));
+    if ((ret != 0) && (strlen(buf) == 0))
+        return RETURN_ERR;
+    *enable=atoi(buf);
+
     return RETURN_OK;
 }
 
 //To turn on/off Band steering
 INT wifi_setBandSteeringEnable(BOOL enable)
-{
+{ 
+    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+    BOOL AP_2G = FALSE; // status of wifi0
+    BOOL AP_5G = FALSE; // Status of wifi1
+    char SSID_2G[MAX_BUF_SIZE] = {0};
+    char SSID_5G[MAX_BUF_SIZE] = {0};
+    char PSK_2G[MAX_BUF_SIZE] = {0};
+    char PSK_5G[MAX_BUF_SIZE] = {0};
+
+    wifi_getRadioEnable(0,&AP_2G);
+    wifi_getRadioEnable(1,&AP_5G);
+
+    if (  AP_2G == TRUE && AP_5G == TRUE ){
+          // SSID & passphrase checking 
+        wifi_getSSIDName(0,SSID_2G);
+        wifi_getSSIDName(1,SSID_5G);
+        wifi_getApSecurityPreSharedKey(0,PSK_2G);
+        wifi_getApSecurityPreSharedKey(1,PSK_5G);
+
+        if ( !strcmp(SSID_2G,SSID_5G) && !strcmp(PSK_2G ,PSK_5G) ) {
+            wifi_dbg_printf("SSID & password are  same for both the AP's , update syscfg" );
+            system("syscfg set BS_ENABLE 1");
+        } else {
+            wifi_dbg_printf (" SSID/ Passwords are not same ");
+            system("syscfg set BS_ENABLE 0");
+        }
+
+    } else {
+	wifi_dbg_printf (" private wifi interfaces are not up ");
+	system("syscfg set BS_ENABLE 0");
+    }
+    system("syscfg commit");
+    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
     return RETURN_OK;
 }
 
@@ -7197,54 +7237,10 @@ INT wifi_getApAssociatedDeviceTidStatsResult(INT radioIndex,  mac_address_t *cli
 #endif
 }
 
-
-
-/**
-* @brief This API initates the scanning.
-*
-* @param[in]  apIndex       The index of access point array.
-* @param[in] scan_mode     Scan modes.
-* @param[in] dwell_time    Amount of time spent on each channel in the hopping sequence.
-* @param[in] chan_num      The channel number(number of for frew )
-* @param[in] chan_list     List of channels.
-*
-* @return The status of the operation
-* @retval RETURN_OK if successful
-* @retval RETURN_ERR if any error is detected
-*
-*/
-
 INT wifi_startNeighborScan(INT apIndex, wifi_neighborScanMode_t scan_mode, INT dwell_time, UINT chan_num, UINT *chan_list)
 {
-        
-    INT status = RETURN_ERR;
-    UINT index;
-    char cmd[256]={0};
-   
-   WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-   if (scan_mode == WIFI_RADIO_SCAN_MODE_ONCHAN)
-    {   
-        return RETURN_OK;
-    }
-	
-     /* If channels are not specified use default driver params */
-    if (chan_num)
-    {
-      uint32_t    chan_index;
-      
-       for (chan_index = 0; chan_index < chan_num; chan_index++)
-           {   
-     		snprintf(cmd,sizeof(cmd),  "iw dev %s%d scan -u freq %u passive >> /tmp/%u.txt ", RADIO_PREFIX, apIndex%2, chan_list[chan_index],chan_list[chan_index]);
-		system(cmd);
-           }
-
-      }else { 
-      snprintf(cmd, sizeof(cmd),  "iw dev %s%d scan -u freq passive >> /tmp/scan_results.txt ", RADIO_PREFIX, apIndex%2 );
-      system(cmd);
-
-    }
-
- return RETURN_OK;
+    // TODO Implement me!
+    return RETURN_OK;
 }
 
 
@@ -8469,32 +8465,15 @@ int main(int argc,char **argv)
         printf("wifi_devMacAddress=%s \t wifi_devAssociatedDeviceAuthentiationState=%d \t, wifi_devSignalStrength=%d \t,wifi_devTxRate=%d \t, wifi_devRxRate =%d \t\n ", mac_addr,output_struct.wifi_devAssociatedDeviceAuthentiationState,output_struct.wifi_devSignalStrength,output_struct.wifi_devTxRate,output_struct.wifi_devRxRate);
     }
     
-   if(strstr(argv[1],"wifi_startNeighborScan")!=NULL)
-    {
-	int args_index = 0;
-	char vbuf[256] = {0};
-        if(argc <= 5 )
-        {
-
-    	 printf("Insufficient arguments , usage :: \n");  
-         printf(" wifihal wifi_startNeighborScan [apindex (0-15)] [scanmode (0 to 4)] [dwelltime] [channel_listcount] [ channel-list]... \n");    
-	 exit(-1);
-        }
-
-        INT apindex = atoi(argv[2]);
-        wifi_neighborScanMode_t scan_mode = atoi(argv[3]);
-        INT dwell_time = atoi(argv[4]);
-        UINT chan_num = atoi(argv[5]);
-	UINT *chan_list = (UINT *) malloc((argc-5)*sizeof(UINT));
-
-	for( args_index=0 ; args_index < argc-6 ; args_index++ ){
-      		chan_list[args_index] = (UINT)atoi(argv[args_index+6]);
-        }
-        
-      wifi_startNeighborScan(apindex, scan_mode, dwell_time, chan_num, chan_list);
-
+    if(strstr(argv[1],"wifi_setBandSteeringEnable")!=NULL){
+        BOOL enable = atoi(argv[2]);
+        wifi_setBandSteeringEnable( enable);
     }
-
+    if(strstr(argv[1],"wifi_getBandSteeringEnable")!=NULL){
+        BOOL enable  = 0;
+        wifi_getBandSteeringEnable( &enable);
+        printf("Bandsteering  status is  %d \n", enable);
+    } 
 
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
     return 0;

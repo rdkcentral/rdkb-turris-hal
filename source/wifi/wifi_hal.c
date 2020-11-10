@@ -45,8 +45,6 @@
 #include <ev.h>
 #include <wpa_ctrl.h>
 #include <errno.h>
-#define MAX_SUPPORTED_IFACES 6 // 2 x home 2 x backhaul 2x secure onboard
-
 #define MAC_ALEN 6
 
 #define MAX_BUF_SIZE 128
@@ -60,7 +58,18 @@
 #define DRIVER_2GHZ "ath9k"
 #define DRIVER_5GHZ "ath10k_pci"
 
-#define MAX_APS 6
+/*
+   MAX_APS - Number of all AP available in system
+   2x Home AP
+   2x Backhaul AP
+   2x Guest AP
+   2x Secure Onboard AP
+   2x Service AP
+
+*/
+#define MAX_APS 10
+#define NUMBER_OF_RADIOS 2
+
 #ifndef AP_PREFIX
 #define AP_PREFIX	"wifi"
 #endif
@@ -1047,7 +1056,7 @@ INT wifi_getSSIDNumberOfEntries(ULONG *output) //Tr181
 {
     if (NULL == output)
         return RETURN_ERR;
-    *output = MAX_APS;//For WiFi Extender feature, we have 6 SSIDs for now. TODO: we may need to add more in future
+    *output = MAX_APS;
 
     return RETURN_OK;
 }
@@ -4383,9 +4392,9 @@ INT wifi_setApEnable(INT apIndex, BOOL enable)
     char buf[MAX_BUF_SIZE] = {0};
     BOOL status;
 
-/*    wifi_getApEnable(apIndex,&status);
+    wifi_getApEnable(apIndex,&status);
     if (enable == status)
-        return RETURN_OK; */
+        return RETURN_OK;
 
     if (enable == TRUE) {
         align_hostapd_config(apIndex);
@@ -4413,16 +4422,16 @@ INT wifi_getApEnable(INT apIndex, BOOL *output_bool)
     char cmd[MAX_CMD_SIZE] = {'\0'};
     char buf[MAX_BUF_SIZE] = {'\0'};
 
-    if((!output_bool) || (apIndex < 0) || (apIndex > 15))
+    if((!output_bool) || (apIndex < 0) || (apIndex >= MAX_APS))
         return RETURN_ERR;
 
-    if((apIndex >= 0) && (apIndex <= 5))//Handling 6 APs
+    *output_bool = 0;
+
+    if((apIndex >= 0) && (apIndex < MAX_APS))//Handling 6 APs
     {
         sprintf(cmd, "%s%s%d%s", "ifconfig ", AP_PREFIX, apIndex, " | grep UP");
         *output_bool = _syscmd(cmd,buf,sizeof(buf))?0:1;
     }
-    else if(apIndex > 3)//APs(4-15) are not supported yet
-        *output_bool = 0;
 
     return RETURN_OK;
 }
@@ -6466,15 +6475,15 @@ INT wifi_pushRadioChannel2(INT radioIndex, UINT channel, UINT channel_width_MHz,
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     if(chan_to_freq(radioIndex, channel, &freq) == RETURN_ERR)
         return RETURN_ERR;
-    //Send chan_switch to all VAPs
-    snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d ", AP_PREFIX, radioIndex, csa_beacon_count, freq);
-    ret = _syscmd(cmd, buf, sizeof(buf));
-    snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d ", AP_PREFIX, radioIndex+2, csa_beacon_count, freq);
-    ret = _syscmd(cmd, buf, sizeof(buf));
-    snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d ", AP_PREFIX, radioIndex+4, csa_beacon_count, freq);
-    ret = _syscmd(cmd, buf, sizeof(buf));
 
-    //snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d sec_channel_offset=1 center_freq1=%f bandwidth=%d %s", RADIO_PREFIX, radioIndex, csa_beacon_count, freq, channel_width_MHz, vht);
+    //Send chan_switch to all VAPs
+    for(int i=0; i < MAX_APS/NUMBER_OF_RADIOS; i++) {
+        int apIndex = radioIndex + i*NUMBER_OF_RADIOS;
+        //snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d sec_channel_offset=1 center_freq1=%f bandwidth=%d %s", RADIO_PREFIX, radioIndex, csa_beacon_count, freq, channel_width_MHz, vht);
+        snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d ", AP_PREFIX, apIndex, csa_beacon_count, freq);
+        ret = _syscmd(cmd, buf, sizeof(buf));
+    }
+
     wifi_setRadioChannel(radioIndex,channel);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 
@@ -7795,7 +7804,7 @@ static wifi_newApAssociatedDevice_callback clients_connect_cb;
 static wifi_newApAssociatedDevice_callback2 clients_connect_cb2;
 #endif
 static wifi_apDisassociatedDevice_callback clients_disconnect_cb;
-static struct ctrl wpa_ctrl[MAX_SUPPORTED_IFACES];
+static struct ctrl wpa_ctrl[MAX_APS];
 static int initialized;
 /* static void ctrl_close(struct ctrl *ctrl)
 {
@@ -8001,7 +8010,7 @@ static int init_wpa()
         return RETURN_ERR;
     }
 
-    if (snum > MAX_SUPPORTED_IFACES) {
+    if (snum > MAX_APS) {
         printf("more ssid than supported! %d\n", snum);
         return RETURN_ERR;
     }

@@ -600,7 +600,7 @@ INT wifi_setSTANetworks(INT apIndex, wifi_sta_network_t **staNetworks_array, INT
     sprintf(cmd, "diff -q /tmp/%s.conf /tmp/%s.old", ssid_ifname, ssid_ifname);
     if(_syscmd(cmd, out, 64))
     {
-        sprintf(cmd, "wpa_cli -i%s reconfigure", ssid_ifname);
+        sprintf(cmd, "wpa_cli -B -i%s reconfigure", ssid_ifname);
         _syscmd(cmd, out, 64);
         if(apIndex%2)
         {

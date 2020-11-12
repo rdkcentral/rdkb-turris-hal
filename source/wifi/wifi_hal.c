@@ -7199,14 +7199,17 @@ INT wifi_getApAssociatedDeviceTidStatsResult(INT radioIndex,  mac_address_t *cli
 
 INT wifi_startNeighborScan(INT apIndex, wifi_neighborScanMode_t scan_mode, INT dwell_time, UINT chan_num, UINT *chan_list)
 {
-    INT status = RETURN_ERR;
-    UINT index;
     INT Radio_Index;
-    char cmd[256]={0};
+    char cmd[MAX_CMD_SIZE]={0};
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    wifi_getApRadioIndex(apIndex,&Radio_Index);	
+    int ret = wifi_getApRadioIndex(apIndex,&Radio_Index);
+    if (ret != 0)
+    {
+        printf("Failed to get Radio index \n");
+        return RETURN_ERR;
+    }
     if (scan_mode == WIFI_RADIO_SCAN_MODE_ONCHAN)
-    {   
+    {
         return RETURN_OK;
     }
      /* If channels are not specified use default driver params */
@@ -7214,15 +7217,22 @@ INT wifi_startNeighborScan(INT apIndex, wifi_neighborScanMode_t scan_mode, INT d
     {
         uint32_t    chan_index;
         for (chan_index = 0; chan_index < chan_num; chan_index++)
-        {   
-     	    snprintf(cmd,sizeof(cmd),  "iw dev %s%d scan -u freq %u passive >> /tmp/%u.txt ", RADIO_PREFIX, Radio_Index, chan_list[chan_index],chan_list[chan_index]);
-	    system(cmd);
+        {
+            int freq = 0;
+            if( chan_to_freq(Radio_Index,chan_list[chan_index],&freq) == RETURN_ERR )
+            {
+                wifi_dbg_printf("Failed to get frequency from the chan_to_freq \n");
+                return RETURN_ERR;
+            }
+            snprintf(cmd, sizeof(cmd), "iw dev %s%d scan -u freq %d passive > /tmp/NeighborScan_CHN%d_results.txt", RADIO_PREFIX, Radio_Index, freq, chan_list[chan_index]);
+            system(cmd);
         }
-     }else { 
-         snprintf(cmd, sizeof(cmd),  "iw dev %s%d scan passive >> /tmp/scan_results.txt ", RADIO_PREFIX, Radio_Index );
+     } else {
+         snprintf(cmd, sizeof(cmd), "iw dev %s%d scan passive > /tmp/NeighborScan_RADIO%d_results.txt", RADIO_PREFIX, Radio_Index, Radio_Index);
          system(cmd);
      }
-    return RETURN_OK;
+     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
+     return RETURN_OK;
 }
 
 INT wifi_steering_setGroup(UINT steeringgroupIndex, wifi_steering_apConfig_t *cfg_2, wifi_steering_apConfig_t *cfg_5)
@@ -8448,22 +8458,24 @@ int main(int argc,char **argv)
 	
    if(strstr(argv[1],"wifi_startNeighborScan")!=NULL)
     {
-	int args_index = 0;
-        if(argc <= 5 )
+        int args_index = 0;
+        INT  exit_status = RETURN_ERR;
+        if(argc <= 5)
         {
-    	    printf("Insufficient arguments , usage :: \n");  
-            printf(" wifihal wifi_startNeighborScan [apindex (0-15)] [scanmode (0 to 4)] [dwelltime] [channel_listcount] [ channel-list]... \n");    
+	    printf("Insufficient arguments , usage :: \n");
+	    printf(" wifihal wifi_startNeighborScan [apindex (0-15)] [scanmode (0 to 4)] [dwelltime] [channel_listcount] [ channel-list]... \n");
 	    exit(-1);
         }
         INT apindex = atoi(argv[2]);
         wifi_neighborScanMode_t scan_mode = atoi(argv[3]);
         INT dwell_time = atoi(argv[4]);
         UINT chan_num = atoi(argv[5]);
-	UINT *chan_list = (UINT *) malloc((argc-5)*sizeof(UINT));
-	for( args_index=0 ; args_index < argc-6 ; args_index++ ){
+        UINT *chan_list = (UINT *) malloc((argc-5)*sizeof(UINT));
+        for( args_index=0 ; args_index < argc-6 ; args_index++ ){
       	    chan_list[args_index] = (UINT)atoi(argv[args_index+6]);
         }
-        wifi_startNeighborScan(apindex, scan_mode, dwell_time, chan_num, chan_list);
+        exit_status =  wifi_startNeighborScan(apindex, scan_mode, dwell_time, chan_num, chan_list);
+        printf(" Scan results are copied to /tmp/NeighborScan*.txt \n Hal exit_status : %d \n ", exit_status);
     }
 
 

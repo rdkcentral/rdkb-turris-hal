@@ -8087,6 +8087,24 @@ INT wifi_getRadioPercentageTransmitPower(INT apIndex, ULONG *txpwr_pcntg)
     return RETURN_OK;
 }
 
+INT wifi_setZeroDFSState(UINT radioIndex, BOOL enable, BOOL precac)
+{
+     //Zero-wait DFS not supported
+     return RETURN_ERR;
+}
+
+INT wifi_getZeroDFSState(UINT radioIndex, BOOL *enable, BOOL *precac)
+{
+     //Zero-wait DFS not supported
+     return RETURN_ERR;
+}
+
+INT wifi_isZeroDFSSupported(UINT radioIndex, BOOL *supported)
+{
+     *supported = false;
+     return RETURN_OK;
+}
+
 /* multi-psk support */
 #ifdef MULTI_PSK
 void wifi_newApAssociatedDevice_callback_register2(wifi_newApAssociatedDevice_callback2 callback_proc)

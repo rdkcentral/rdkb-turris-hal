@@ -525,151 +525,6 @@ static int readBandWidth(int radioIndex,char *bw_value)
     }
     return RETURN_OK;
 }
-/**************************************************************************/
-/*! \fn void add_ifnames_in_bridge()
- **************************************************************************
- *  \brief This function add given interfaces in given bridges
- *  \param[in] bridge name,interface list seperated by comma',' or space' '
- *  \return void
- **************************************************************************/
-static INT add_ifnames_in_bridge(char *bridge,char *ifnames_list)
-{
-    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    char *list = ifnames_list;
-    char command[MAX_BUF_SIZE] = "";
-    char out[MAX_BUF_SIZE] = "";
-    char *temp;
-
-    sprintf(command,"ifconfig %s",bridge);
-
-    if(RETURN_ERR == _syscmd(command,out,MAX_BUF_SIZE))
-    {
-        return RETURN_ERR;
-    }
-    if(strlen(out) == 0)
-    {
-      fprintf(stderr,"\nbridge interface is not Ready!!!\n");
-      return RETURN_ERR;
-    }
-
-    temp = strtok(list,", ");
-    while(temp != NULL)
-    {
-       /*adding interface in bridge*/
-        sprintf(command, "brctl addif %s %s", bridge,temp);
-        system(command);
-        temp = strtok(NULL,", ");
-    }
-    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-    return RETURN_OK;
-}
-/**************************************************************************/
-/*! \fn static INT get_param_value(char *parameter, char *output)
- **************************************************************************
- *  \brief This function will get parameter value for passed parameter name
- *  \param[in] parameter- name of parameter
- *  \param[out] value- value of passed parameter
- *  \return (RETURN_OK/RETURN_ERR)
- **************************************************************************/
-static INT get_param_value(char *parameter, char *output)
-{
-    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__); 
-    FILE *f;
-    char *line = NULL;
-    size_t len = 0;
-    ssize_t nread;
-    char *param,*value;
-    f = fopen(DEF_RADIO_PARAM_CONF, "r");
-    if (f == NULL) {
-        perror("fopen");
-        wifi_dbg_printf("\n[%s]:Failed to open file %s\n",__func__,DEF_RADIO_PARAM_CONF);
-        return RETURN_ERR;
-    }
-    while ((nread = getline(&line, &len, f)) != -1) {
-        param = strtok(line,"=");
-        value = strtok(NULL,"=");
-        if( strcmp( parameter,param ) == 0 )
-        {
-            value[strlen(value)-1]='\0';
-            strcpy(output,value);
-        }
-     }
-     free(line);
-     fclose(f);
-    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-    return RETURN_OK;
-}
-
-/**************************************************************************/
-/*! \fn statis INT prepare_hostapd_conf()
- **************************************************************************
- *  \brief This function will prepare hostapd conf in nvram from default conf
- *  \return (RETURN_OK/RETURN_ERR)
- **************************************************************************/
-static INT prepare_hostapd_conf()
-{
-    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    char cmd[128];
-    /* check  /usr/ccsp/wifi/hostapd0.conf, /usr/ccsp/wifi/hostapd0.conf , /usr/ccsp/wifi/hostapd4.conf,/usr/ccsp/wifi/hostapd5.conf exists or not */
-    if(( access(DEF_HOSTAPD_CONF_0, F_OK) != -1 ) && ( access(DEF_HOSTAPD_CONF_1, F_OK) != -1 ) && ( access(DEF_HOSTAPD_CONF_4, F_OK) != -1 ) && ( access(DEF_HOSTAPD_CONF_5, F_OK) != -1 ))
-    {
-        wifi_dbg_printf("\n[%s]: Default files %s and %s presents!!\n",__func__,DEF_HOSTAPD_CONF_0,DEF_HOSTAPD_CONF_1);
-    }
-    else
-    {
-        wifi_dbg_printf("\n[%s]: Default files %s and %s not presents!!\n",__func__,DEF_HOSTAPD_CONF_0,DEF_HOSTAPD_CONF_1);
-        return RETURN_ERR;
-    }
-    /* check  /nvram/hostapd0.conf exists or not */
-    if( access(HOSTAPD_CONF_0, F_OK) != -1 )
-    {
-        wifi_dbg_printf("\n[%s]: %s file already exits!!\n",__func__,HOSTAPD_CONF_0);
-    }
-    else
-    {
-        wifi_dbg_printf("\n[%s]: %s file does not exits. Preparing from %s file\n",__func__,HOSTAPD_CONF_0,DEF_HOSTAPD_CONF_0);
-        sprintf(cmd, "cp %s %s",DEF_HOSTAPD_CONF_0,HOSTAPD_CONF_0);
-        system(cmd);
-    }
-
-    /* check  /nvram/hostapd1.conf exists or not */
-    if( access(HOSTAPD_CONF_1, F_OK) != -1 )
-    {
-        wifi_dbg_printf("\n[%s]: %s file already exits!!\n",__func__,HOSTAPD_CONF_1);
-    }
-    else
-    {
-        wifi_dbg_printf("\n[%s]: %s file does not exits. Preparing from %s file\n",__func__,HOSTAPD_CONF_1,DEF_HOSTAPD_CONF_1);
-        sprintf(cmd, "cp %s %s",DEF_HOSTAPD_CONF_1,HOSTAPD_CONF_1);
-        system(cmd);
-    }
-
-    /* check  /nvram/hostapd4.conf exists or not */
-    if( access(HOSTAPD_CONF_4, F_OK) != -1 )
-    {
-        wifi_dbg_printf("\n[%s]: %s file already exits!!\n",__func__,HOSTAPD_CONF_4);
-    }
-    else
-    {
-        wifi_dbg_printf("\n[%s]: %s file does not exits. Preparing from %s file\n",__func__,HOSTAPD_CONF_4,DEF_HOSTAPD_CONF_4);
-        sprintf(cmd, "cp %s %s",DEF_HOSTAPD_CONF_4,HOSTAPD_CONF_4);
-        system(cmd);
-    }
-
-    /* check  /nvram/hostapd5.conf exists or not */
-    if( access(HOSTAPD_CONF_5, F_OK) != -1 )
-    {
-        wifi_dbg_printf("\n[%s]: %s file already exits!!\n",__func__,HOSTAPD_CONF_5);
-    }
-    else
-    {
-        wifi_dbg_printf("\n[%s]: %s file does not exits. Preparing from %s file\n",__func__,HOSTAPD_CONF_5,DEF_HOSTAPD_CONF_5);
-        sprintf(cmd, "cp %s %s",DEF_HOSTAPD_CONF_5,HOSTAPD_CONF_5);
-        system(cmd);
-    }
-    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-    return RETURN_OK;
-}
 
 INT wifi_setApBeaconRate(INT radioIndex,CHAR *beaconRate)
 {
@@ -728,11 +583,7 @@ INT wifi_factoryReset()
     wifi_dbg_printf("\n[%s]: deleting hostapd conf file %s and %s",__func__,HOSTAPD_CONF_0,HOSTAPD_CONF_1);
     sprintf(cmd, "rm -rf %s %s",HOSTAPD_CONF_0,HOSTAPD_CONF_1);
     system(cmd);
-    /*create new configuraion file from default configuration*/
-    if(RETURN_ERR == prepare_hostapd_conf())
-    {
-        return RETURN_ERR;
-    }
+    system("systemctl restart hostapd.service");
 
     return RETURN_OK;
 }
@@ -899,44 +750,10 @@ INT wifi_init()                            //RDKB
     //Not intitializing macfilter for Turris-Omnia Platform for now
     //macfilter_init();
 
-    /* preparing hostapd configuration*/
-    if(RETURN_ERR == prepare_hostapd_conf())
-    {
-        return RETURN_ERR;
-    }
-
-    if( ( RETURN_ERR == _syscmd("syscfg get lan_ifname",bridge_name,sizeof(bridge_name)) ) || 
-        ( RETURN_ERR == _syscmd("iwconfig | grep -r \"IEEE 802.11\" | cut -d \" \" -f1 | tr '\n' ' '",interface,sizeof(interface)) ) )
-    {
-        return RETURN_ERR;
-    }
-
     system("/usr/sbin/iw reg set US");
     system("systemctl start hostapd.service");
     sleep(2);//sleep to wait for hostapd to start
 
-    if((strlen(bridge_name) > 0) && (strlen(interface) > 0) )
-    {
-          /* Removing '\n' from bridge_name because syscfg get lan_ifname returns bridge name terminating with '\n'*/
-          len=strlen(bridge_name);
-          if(bridge_name[len-1]=='\n')
-          bridge_name[len-1]='\0';
-
-          if(RETURN_ERR == add_ifnames_in_bridge(bridge_name,interface))
-          {
-              fprintf(stderr,"\nFailed to radio add interface in bridge\n");
-              return RETURN_ERR;
-          }
-    }
-    else
-    {
-        fprintf(stderr,"\n***Either bridge or Radio interfaces list are Empty***\n");
-        return RETURN_ERR;
-    }
-    #ifdef USE_HOSTAPD_STRUCT
-    //TODO: check the need of this call
-    read_hostapd_all_aps();
-    #endif
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 
     return RETURN_OK;

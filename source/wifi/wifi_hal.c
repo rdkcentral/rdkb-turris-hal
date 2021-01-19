@@ -7413,6 +7413,7 @@ INT wifi_getNeighborReportActivation(UINT apIndex, BOOL *activate)
 
     return RETURN_OK;
 }
+#undef HAL_NETLINK_IMPL
 #ifdef HAL_NETLINK_IMPL
 static int chanSurveyInfo_callback(struct nl_msg *msg, void *arg) {
     struct nlattr *tb[NL80211_ATTR_MAX + 1];
@@ -7494,6 +7495,26 @@ static int chanSurveyInfo_callback(struct nl_msg *msg, void *arg) {
 }
 #endif
 
+static int ieee80211_channel_to_frequency(int channel, int *freqMHz)
+{
+    char command[MAX_CMD_SIZE], output[MAX_BUF_SIZE];
+    FILE *fp;
+
+    if(access("/tmp/freq-channel-map.txt", F_OK)==-1)
+    {
+        printf("Creating Frequency-Channel Map\n");
+        system("iw phy | grep 'MHz \\[' | cut -d' ' -f2,4 > /tmp/freq-channel-map.txt");
+    }
+    snprintf(command, sizeof(command), "cat /tmp/freq-channel-map.txt | grep '\\[%d\\]$' | cut -d' ' -f1", channel);
+    if((fp = popen(command, "r")))
+    {
+        fgets(output, sizeof(output), fp);
+        *freqMHz = atoi(output);
+        fclose(fp);
+    }
+
+    return 0;
+}
 INT wifi_getRadioChannelStats(INT radioIndex,wifi_channelStats_t *input_output_channelStats_array,INT array_size)
 {
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
@@ -7548,51 +7569,68 @@ INT wifi_getRadioChannelStats(INT radioIndex,wifi_channelStats_t *input_output_c
         input_output_channelStats_array[i].ch_utilization_total = local[i].ch_utilization_total;
         //TODO: ch_radar_noise, ch_max_80211_rssi, ch_non_80211_noise, ch_utilization_busy_self
     }
-    return RETURN_OK;
 #else
+    int freqMHz;
     FILE *fp = NULL;
-    char HConf_file[MAX_BUF_SIZE] = {'\0'};
-    char interface_name[50] = {0};
-    char pipeCmd[MAX_CMD_SIZE] = {0};
-    char str[MAX_BUF_SIZE] = {0};
-    wifi_channelStats_t *out=NULL;
-    int i=0;
-    out = &input_output_channelStats_array[0];
-    const char *StatsName[] = {"active time",
-                                "busy time",
-                                "receive time",
-                                "transmit time",
-                                "noise"  };
+    char command[MAX_CMD_SIZE], output[MAX_BUF_SIZE], *value;
+    wifi_channelStats_t *out=input_output_channelStats_array;
 
-     sprintf(HConf_file,"%s%d%s","/nvram/hostapd",radioIndex,".conf");
-     GetInterfaceName(interface_name,HConf_file);
-     snprintf(pipeCmd, sizeof(pipeCmd), "iw dev %s survey dump > /tmp/Channel_Stats.txt", interface_name);
-     system(pipeCmd);
-     for(i=0;i<5;i++)
-     {
-         sprintf(pipeCmd,"%s%s%s","cat  /tmp/Channel_Stats.txt |tail | grep ",StatsName[i]," | cut -d ':' -f2  | tr -d '\t' | cut -d ' ' -f1");
-         fp = popen(pipeCmd, "r");
-         if(fp)
-         {
-             fgets(str, MAX_BUF_SIZE, fp);
-             //Updating the channel status in Milli Seconds(ms), few informations such as ch_radar_noise,ch_max_80211_rssi,ch_utilization,ch_utilization_busy_self,ch_utilization_busy_ext need to be updated
-             if(strcmp(StatsName[i],"active time") == 0)
-                 out->ch_utilization_total = atol(str);
-             else if(strcmp(StatsName[i],"busy time") == 0)
-                 out->ch_utilization_busy = atol(str);
-             else if(strcmp(StatsName[i],"receive time") == 0)
-                 out->ch_utilization_busy_rx = atol(str);
-             else if(strcmp(StatsName[i],"transmit time") == 0)
-                 out->ch_utilization_busy_tx = atol(str);
-             else if(strcmp(StatsName[i],"noise") == 0)
-                 out->ch_non_80211_noise = atoi(str);
-             else
-                 printf("No Channel matches found");
-         }
-     }
-     return RETURN_OK;
+    snprintf(command, sizeof(command), "iw dev %s%d survey dump > /tmp/Channel_Stats.txt", RADIO_PREFIX, radioIndex);
+    system(command);
+
+    do
+    {
+        if(!array_size)
+            snprintf(command, sizeof(command), "cat /tmp/Channel_Stats.txt | grep -A5 '\\[in use\\]' | tr -d '\t'");
+        else
+        {
+            ieee80211_channel_to_frequency(out->ch_number, &freqMHz);
+            snprintf(command, sizeof(command), "cat /tmp/Channel_Stats.txt | grep -A5 %d | tr -d '\t'", freqMHz);
+        }
+        if((fp = popen(command, "r")))
+        {
+            fgets(output, MAX_BUF_SIZE, fp);
+            if(!out->ch_number)
+            {
+                strtok_r(output, ":", &value);
+                strtok(value, " ");
+                out->ch_number = ieee80211_frequency_to_channel(atoi(value));
+            }
+
+            fgets(output, MAX_BUF_SIZE, fp);
+            strtok_r(output, ":", &value);
+            if(strcmp(output, "noise"))//Statistical information not available for this frequency
+                continue;
+            strtok(value, " ");
+            out->ch_noise = atoi(value);
+
+            fgets(output, MAX_BUF_SIZE, fp);
+            strtok_r(output, ":", &value);
+            strtok(value, " ");
+            out->ch_utilization_total = atol(value);//Updating time in ms
+
+            fgets(output, MAX_BUF_SIZE, fp);
+            strtok_r(output, ":", &value);
+            strtok(value, " ");
+            out->ch_utilization_busy = atol(value);//Updating time in ms
+
+            fgets(output, MAX_BUF_SIZE, fp);
+            strtok_r(output, ":", &value);
+            strtok(value, " ");
+            out->ch_utilization_busy_rx = atol(value);//Updating time in ms
+
+            fgets(output, MAX_BUF_SIZE, fp);
+            strtok_r(output, ":", &value);
+            strtok(value, " ");
+            out->ch_utilization_busy_tx = atol(value);//Updating time in ms
+            //TODO: Fetching other information such as ch_radar_noise, ch_max_80211_rssi, ch_non_80211_noise, ch_utilization, ch_utilization_busy_self, ch_utilization_busy_ext
+        }
+    }while(++out<input_output_channelStats_array+array_size);
 #endif
+    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
+    return RETURN_OK;
 }
+#define HAL_NETLINK_IMPL
 
 /* Hostapd events */
 
@@ -8068,15 +8106,9 @@ int main(int argc,char **argv)
     INT ret=0;
 
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    if(argc <= 1) {
-        printf("help\n");
-        //fprintf(stderr,"%s", commands_help);
-
-        exit(-1);
-    } 
-    if(strstr(argv[1], "help")!=NULL)
+    if(argc == 1 || strstr(argv[1], "help"))
     {
-        printf("wifihal <API> <radioIndex> <arg1> <arg2> \n");
+        printf("wifihal <API> <radioIndex> <arg1> <arg2> ...\n");
         exit(-1);
     }
     if(strstr(argv[1], "init")!=NULL) {
@@ -8242,16 +8274,37 @@ int main(int argc,char **argv)
 
     if(strstr(argv[1],"wifi_getRadioChannelStats")!=NULL)
     {
-        if(argc <= 3 )
+#define MAX_ARRAY_SIZE 64
+        int i, array_size;
+        char *p, *ch_str;
+        wifi_channelStats_t input_output_channelStats_array[MAX_ARRAY_SIZE];
+
+        if(argc != 5)
         {
-            printf("Insufficient arguments \n");
+            printf("Insufficient arguments, Usage: wifihal wifi_getRadioChannelStats <AP-Index> <Array-Size> <Comma-seperated-channel-numbers>\n");
             exit(-1);
         }
-        int array_size = atoi(argv[3]);;
-        wifi_channelStats_t input_output_channelStats_array[array_size];
-        wifi_getRadioChannelStats(index,input_output_channelStats_array,array_size);
-        for(int ch_num=0;ch_num< array_size; ch_num++)
-        printf("chan num = %d \t, noise =%d\t ch_utilization_busy_rx = %lld \t,ch_utilization_busy_tx = %lld \t,ch_utilization_busy = %lld \t, ch_utilization_busy_ext = %lld \t, ch_utilization_total = %lld \t \n",input_output_channelStats_array[ch_num].ch_number,input_output_channelStats_array[ch_num].ch_noise,input_output_channelStats_array[ch_num].ch_utilization_busy_rx,input_output_channelStats_array[ch_num].ch_utilization_busy_tx,input_output_channelStats_array[ch_num].ch_utilization_busy,input_output_channelStats_array[ch_num].ch_utilization_busy_ext,input_output_channelStats_array[ch_num].ch_utilization_total);
+        memset(input_output_channelStats_array, 0, sizeof(input_output_channelStats_array));
+
+        for (i=0, array_size=atoi(argv[3]), ch_str=argv[4]; i<array_size; i++, ch_str=p)
+        {
+            strtok_r(ch_str, ",", &p);
+            input_output_channelStats_array[i].ch_number = atoi(ch_str);
+        }
+        wifi_getRadioChannelStats(atoi(argv[2]), input_output_channelStats_array, array_size);
+        if(!array_size)
+            array_size=1;//Need to print current channel statistics
+        for(i=0; i<array_size; i++)
+            printf("chan num = %d \t, noise =%d\t ch_utilization_busy_rx = %lld \t,\
+                    ch_utilization_busy_tx = %lld \t,ch_utilization_busy = %lld \t,\
+                    ch_utilization_busy_ext = %lld \t, ch_utilization_total = %lld \t \n",\
+                    input_output_channelStats_array[i].ch_number,\
+                    input_output_channelStats_array[i].ch_noise,\
+                    input_output_channelStats_array[i].ch_utilization_busy_rx,\
+                    input_output_channelStats_array[i].ch_utilization_busy_tx,\
+                    input_output_channelStats_array[i].ch_utilization_busy,\
+                    input_output_channelStats_array[i].ch_utilization_busy_ext,\
+                    input_output_channelStats_array[i].ch_utilization_total);
     }
 
     if(strstr(argv[1],"wifi_getAssociatedDeviceDetail")!=NULL)

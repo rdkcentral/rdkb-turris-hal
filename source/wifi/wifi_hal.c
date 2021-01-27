@@ -8099,6 +8099,71 @@ close:
 #endif
 /* end of multi-psk support */
 
+INT wifi_setNeighborReports(UINT apIndex,
+                             UINT numNeighborReports,
+                             wifi_NeighborReport_t *neighborReports)
+{
+    char cmd[256] = { 0 };
+    char hex_bssid[13] = { 0 };
+    char bssid[18] = { 0 };
+    char nr[256] = { 0 };
+    char ssid[256];
+    char hex_ssid[256];
+    INT ret;
+
+    /*rmeove all neighbors*/
+    wifi_dbg_printf("\n[%s]: removing all neighbors from %s%d",__func__,AP_PREFIX,apIndex);
+    sprintf(cmd, "hostapd_cli show_neighbor -i %s%d | awk '{print $1 \" \" $2}' | xargs -n2 -r hostapd_cli remove_neighbor -i %s%d",AP_PREFIX,apIndex,AP_PREFIX,apIndex);
+    system(cmd);
+
+    for(unsigned int i = 0; i < numNeighborReports; i++)
+    {
+        memset(ssid, 0, sizeof(ssid));
+        ret = wifi_getSSIDName(apIndex, ssid);
+        if (ret != RETURN_OK)
+            return RETURN_ERR;
+
+        memset(hex_ssid, 0, sizeof(hex_ssid));
+        for(size_t j = 0,k = 0; ssid[j] != '\0' && k < sizeof(hex_ssid); j++,k+=2 )
+            sprintf(hex_ssid + k,"%02x", ssid[j]);
+
+        snprintf(hex_bssid, sizeof(hex_bssid),
+                "%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx",
+                neighborReports[i].bssid[0], neighborReports[i].bssid[1], neighborReports[i].bssid[2], neighborReports[i].bssid[3], neighborReports[i].bssid[4], neighborReports[i].bssid[5]);
+        snprintf(bssid, sizeof(bssid),
+                "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx",
+                neighborReports[i].bssid[0], neighborReports[i].bssid[1], neighborReports[i].bssid[2], neighborReports[i].bssid[3], neighborReports[i].bssid[4], neighborReports[i].bssid[5]);
+
+        snprintf(nr, sizeof(nr),
+                "%s"                                    // bssid
+                "%02hhx%02hhx%02hhx%02hhx"              // bssid_info
+                "%02hhx"                                // operclass
+                "%02hhx"                                // channel
+                "%02hhx",                               // phy_mode
+                hex_bssid,
+                neighborReports[i].info & 0xff, (neighborReports[i].info >> 8) & 0xff,
+                (neighborReports[i].info >> 16) & 0xff, (neighborReports[i].info >> 24) & 0xff,
+                neighborReports[i].opClass,
+                neighborReports[i].channel,
+                neighborReports[i].phyTable);
+
+        snprintf(cmd, sizeof(cmd),
+                "hostapd_cli set_neighbor "
+                "%s "                        // bssid
+                "ssid=%s "                   // ssid
+                "nr=%s "                    // nr
+                "-i %s%d",
+                bssid,hex_ssid,nr,AP_PREFIX,apIndex);
+
+        if (WEXITSTATUS(system(cmd)) != 0)
+        {
+            wifi_dbg_printf("\n[%s]: %s failed",__func__,cmd);
+        }
+    }
+
+    return RETURN_OK;
+}
+
 #ifdef _WIFI_HAL_TEST_
 int main(int argc,char **argv)
 {
@@ -8106,18 +8171,17 @@ int main(int argc,char **argv)
     INT ret=0;
 
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    if(argc == 1 || strstr(argv[1], "help"))
-    {
-        printf("wifihal <API> <radioIndex> <arg1> <arg2> ...\n");
-        exit(-1);
-    }
     if(strstr(argv[1], "init")!=NULL) {
         return wifi_init();
     }
     else if(strstr(argv[1], "reset")!=NULL) {
         return wifi_reset();
     }    
-
+    if(argc <= 2 || strstr(argv[1], "help"))
+    {
+        printf("wifihal <API> <radioIndex> <arg1> <arg2> ...\n");
+        exit(-1);
+    }
     index = atoi(argv[2]);
     if(strstr(argv[1], "wifi_getApName")!=NULL)
     {
@@ -8321,6 +8385,64 @@ int main(int argc,char **argv)
         wifi_getAssociatedDeviceDetail(index,dev_index,&output_struct);
         mac_addr_ntoa(mac_addr,output_struct.wifi_devMacAddress);
         printf("wifi_devMacAddress=%s \t wifi_devAssociatedDeviceAuthentiationState=%d \t, wifi_devSignalStrength=%d \t,wifi_devTxRate=%d \t, wifi_devRxRate =%d \t\n ", mac_addr,output_struct.wifi_devAssociatedDeviceAuthentiationState,output_struct.wifi_devSignalStrength,output_struct.wifi_devTxRate,output_struct.wifi_devRxRate);
+    }
+
+    if(strstr(argv[1],"wifi_setNeighborReports")!=NULL)
+    {
+        if (argc <= 3)
+        {
+            printf("Insufficient arguments\n");
+            exit(-1);
+        }
+        char args[256];
+        wifi_NeighborReport_t *neighborReports;
+
+        neighborReports = calloc(argc - 2, sizeof(neighborReports));
+        if (!neighborReports)
+        {
+            printf("Failed to allocate memory");
+            exit(-1);
+        }
+
+        for (int i = 3; i < argc; ++i)
+        {
+            char *val;
+            int j = 0;
+            memset(args, 0, sizeof(args));
+            strncpy(args, argv[i], sizeof(args));
+            val = strtok(args, ";");
+            while (val != NULL)
+            {
+                if (j == 0)
+                {
+                    mac_addr_aton(neighborReports[i - 3].bssid, val);
+                } else if (j == 1)
+                {
+                    neighborReports[i - 3].info = strtol(val, NULL, 16);
+                } else if (j == 2)
+                {
+                    neighborReports[i - 3].opClass = strtol(val, NULL, 16);
+                } else if (j == 3)
+                {
+                    neighborReports[i - 3].channel = strtol(val, NULL, 16);
+                } else if (j == 4)
+                {
+                    neighborReports[i - 3].phyTable = strtol(val, NULL, 16);
+                } else {
+                    printf("Insufficient arguments]n\n");
+                    exit(-1);
+                }
+                val = strtok(NULL, ";");
+                j++;
+            }
+        }
+
+        INT ret = wifi_setNeighborReports(index, argc - 3, neighborReports);
+        if (ret != RETURN_OK)
+        {
+            printf("wifi_setNeighborReports ret = %d", ret);
+            exit(-1);
+        }
     }
 
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);

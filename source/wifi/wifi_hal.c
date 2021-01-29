@@ -8171,17 +8171,19 @@ int main(int argc,char **argv)
     INT ret=0;
 
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-    if(strstr(argv[1], "init")!=NULL) {
-        return wifi_init();
-    }
-    else if(strstr(argv[1], "reset")!=NULL) {
-        return wifi_reset();
-    }    
-    if(argc <= 2 || strstr(argv[1], "help"))
+    if(argc<3)
     {
+        if(argc==2)
+        {
+            if(!strcmp(argv[1], "init"))
+                return wifi_init();
+            if(!strcmp(argv[1], "reset"))
+                return wifi_reset();
+        }
         printf("wifihal <API> <radioIndex> <arg1> <arg2> ...\n");
         exit(-1);
     }
+
     index = atoi(argv[2]);
     if(strstr(argv[1], "wifi_getApName")!=NULL)
     {

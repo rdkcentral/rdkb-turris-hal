@@ -67,7 +67,8 @@
    2x Service AP
 
 */
-#define MAX_APS 10
+//Currently 4 APs are supported
+#define MAX_APS 4
 #define NUMBER_OF_RADIOS 2
 
 #ifndef AP_PREFIX

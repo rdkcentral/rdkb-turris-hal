@@ -1041,7 +1041,7 @@ INT wifi_getRadioSupportedFrequencyBands(INT radioIndex, CHAR *output_string)	//
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     if (NULL == output_string)
         return RETURN_ERR;
-    snprintf(output_string, 64, "2.4GHz,5GHz");
+    snprintf(output_string, 64, (radioIndex == 0)?"2.4GHz":"5GHz");
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 
     return RETURN_OK;

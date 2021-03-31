@@ -92,7 +92,7 @@
  * This enables key identifier support in associated device event.
  * Key identifier support requires new associated device structure.
  */
-#define MULTI_PSK
+//#define MULTI_PSK
 
 #ifdef WIFI_DEBUG
 #define wifi_dbg_printf printf

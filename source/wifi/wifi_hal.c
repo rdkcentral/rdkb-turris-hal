@@ -87,13 +87,6 @@
 //Uncomment to enable debug logs
 //#define WIFI_DEBUG
 
-
-/* Enable Multi-PSK support
- * This enables key identifier support in associated device event.
- * Key identifier support requires new associated device structure.
- */
-//#define MULTI_PSK
-
 #ifdef WIFI_DEBUG
 #define wifi_dbg_printf printf
 #define WIFI_ENTRY_EXIT_DEBUG printf
@@ -7536,9 +7529,6 @@ struct ctrl {
     ev_io io;
 };
 static wifi_newApAssociatedDevice_callback clients_connect_cb;
-#ifdef MULTI_PSK
-static wifi_newApAssociatedDevice_callback2 clients_connect_cb2;
-#endif
 static wifi_apDisassociatedDevice_callback clients_disconnect_cb;
 static struct ctrl wpa_ctrl[MAX_APS];
 static int initialized;
@@ -7616,11 +7606,7 @@ static void ctrl_ev_cb(EV_P_ struct ev_io *io, int events)
     if (strncmp("AP-STA-CONNECTED ", str, 17) == 0) {
         if (!(str = index(buf, ' ')))
             return;
-#ifdef MULTI_PSK
-        wifi_associated_dev4_t sta;
-#else
         wifi_associated_dev_t sta;
-#endif
         memset(&sta, 0, sizeof(sta));
 
         sscanf(str, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
@@ -7629,17 +7615,7 @@ static void ctrl_ev_cb(EV_P_ struct ev_io *io, int events)
 
         sta.cli_Active=true;
 
-#ifdef MULTI_PSK
-        str++;
-        if (str = index(str, ' '))
-        {
-            str++;
-            sscanf(str, "keyid=%s", &(sta.cli_MultiPskKeyID));
-        }
-        (clients_connect_cb2)(ctrl->ssid_index, &sta);
-#else
         (clients_connect_cb)(ctrl->ssid_index, &sta);
-#endif
         goto handled;
     }
     if (strncmp("AP-STA-DISCONNECTED ", str, 20) == 0) {
@@ -7842,51 +7818,23 @@ INT wifi_isZeroDFSSupported(UINT radioIndex, BOOL *supported)
 }
 
 /* multi-psk support */
-#ifdef MULTI_PSK
-void wifi_newApAssociatedDevice_callback_register2(wifi_newApAssociatedDevice_callback2 callback_proc)
+INT wifi_getMultiPskClientKey(INT apIndex, mac_address_t mac, wifi_key_multi_psk_t *key)
 {
-    clients_connect_cb2 = callback_proc;
-    if (!initialized)
-        init_wpa();
-}
+    char cmd[256];
 
-INT wifi_getApAssociatedDeviceDiagnosticResult4(INT apIndex, wifi_associated_dev4_t **associated_dev_array, UINT *output_array_size)
-{
-     int ret = 0;
-     char cmd[256];
-     char keyid[2048];
-     wifi_associated_dev3_t *associated_dev = NULL;
-     wifi_associated_dev4_t *dev=NULL;
-     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
-     ret = wifi_getApAssociatedDeviceDiagnosticResult3(apIndex, &associated_dev, output_array_size);
-     if (ret != RETURN_OK)
-	return ret;
+    sprintf(cmd, "hostapd_cli -i %s%d sta %x:%x:%x:%x:%x:%x |grep '^keyid' | cut -f 2 -d = | tr -d '\n'",
+        AP_PREFIX,
+        apIndex,
+        mac[0],
+        mac[1],
+        mac[2],
+        mac[3],
+        mac[4],
+        mac[5]
+    );
+    printf("DEBUG LOG wifi_getMultiPskClientKey(%s)\n",cmd);
+    _syscmd(cmd, key->wifi_keyId, 64);
 
-    if (*output_array_size <= 0)
-        return RETURN_OK;
-
-    dev=(wifi_associated_dev4_t *) calloc (*output_array_size, sizeof(wifi_associated_dev4_t));
-    *associated_dev_array = dev;
-
-    for(int i=0; i<*output_array_size;i++) {
-        //Copy previous fields
-        memcpy(dev[i].cli_MACAddress, associated_dev[i].cli_MACAddress, sizeof(dev[i].cli_MACAddress));
-
-        sprintf(cmd, "hostapd_cli -i %s%d sta %x:%x:%x:%x:%x:%x |grep '^keyid' | cut -f 2 -d = | tr -d '\n'",
-            AP_PREFIX,
-            apIndex,
-            dev[i].cli_MACAddress[0],
-            dev[i].cli_MACAddress[1],
-            dev[i].cli_MACAddress[2],
-            dev[i].cli_MACAddress[3],
-            dev[i].cli_MACAddress[4],
-            dev[i].cli_MACAddress[5]
-        );
-        _syscmd(cmd, dev[i].cli_MultiPskKeyID, 64);
-
-    }
-    free(associated_dev);
-    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 
     return RETURN_OK;
 }
@@ -7977,7 +7925,6 @@ close:
     fclose(fd);
     return ret;
 }
-#endif
 /* end of multi-psk support */
 
 INT wifi_setNeighborReports(UINT apIndex,

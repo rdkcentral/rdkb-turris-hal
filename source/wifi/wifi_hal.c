@@ -527,6 +527,8 @@ INT wifi_setLED(INT radioIndex, BOOL enable)
 //Get the wifi hal version in string, eg "2.0.0".  WIFI_HAL_MAJOR_VERSION.WIFI_HAL_MINOR_VERSION.WIFI_HAL_MAINTENANCE_VERSION
 INT wifi_getHalVersion(CHAR *output_string)   //RDKB   
 {
+    if(!output_string)
+        return RETURN_ERR;
     snprintf(output_string, 64, "%d.%d.%d", WIFI_HAL_MAJOR_VERSION, WIFI_HAL_MINOR_VERSION, WIFI_HAL_MAINTENANCE_VERSION);
 
     return RETURN_OK;
@@ -8040,6 +8042,15 @@ int main(int argc,char **argv)
                 return wifi_init();
             if(!strcmp(argv[1], "reset"))
                 return wifi_reset();
+            if(!strcmp(argv[1], "wifi_getHalVersion"))
+            {
+                char buffer[64];
+                if(wifi_getHalVersion(buffer)==RETURN_OK)
+                    printf("Version: %s\n", buffer);
+                else
+                    printf("Error in wifi_getHalVersion\n");
+                return RETURN_OK;
+            }
         }
         printf("wifihal <API> <radioIndex> <arg1> <arg2> ...\n");
         exit(-1);

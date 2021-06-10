@@ -955,10 +955,10 @@ INT wifi_getRadioStatus(INT radioIndex, BOOL *output_bool)	//RDKB
     return wifi_getRadioEnable(radioIndex, output_bool);
 }
 
-//Get the Radio Interface name from platform, eg "wifi0"
+//Get the Radio Interface name from platform, eg "wlan0"
 INT wifi_getRadioIfName(INT radioIndex, CHAR *output_string) //Tr181
 {
-    if (NULL == output_string) 
+    if (NULL == output_string || radioIndex>=NUMBER_OF_RADIOS)
         return RETURN_ERR;
     snprintf(output_string, 64, "%s%d", RADIO_PREFIX, radioIndex);
 
@@ -8032,6 +8032,7 @@ int main(int argc,char **argv)
 {
     int index;
     INT ret=0;
+    char buf[32];
 
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     if(argc<3)
@@ -8317,6 +8318,13 @@ int main(int argc,char **argv)
             printf("wifi_setNeighborReports ret = %d", ret);
             exit(-1);
         }
+    }
+    if(strstr(argv[1],"wifi_getRadioIfName")!=NULL)
+    {
+        if((ret=wifi_getRadioIfName(index, buf))==RETURN_OK)
+            printf("Radio Interface Name:%s.\n", buf);
+        else
+            printf("Error returned\n");
     }
 
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);

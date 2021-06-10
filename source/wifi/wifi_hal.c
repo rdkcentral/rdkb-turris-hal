@@ -4409,9 +4409,10 @@ INT wifi_getApAssociatedDevicesHighWatermarkDate(INT apIndex, ULONG *output_in_s
 //Comma-separated list of strings. Indicates which security modes this AccessPoint instance is capable of supporting. Each list item is an enumeration of: None,WEP-64,WEP-128,WPA-Personal,WPA2-Personal,WPA-WPA2-Personal,WPA-Enterprise,WPA2-Enterprise,WPA-WPA2-Enterprise
 INT wifi_getApSecurityModesSupported(INT apIndex, CHAR *output)
 {
-    if(!output)
+    if(!output || apIndex>=MAX_APS)
         return RETURN_ERR;
-    snprintf(output, 128, "None,WPA-Personal,WPA2-Personal,WPA-WPA2-Personal,WPA-Enterprise,WPA2-Enterprise,WPA-WPA2-Enterprise");
+    //snprintf(output, 128, "None,WPA-Personal,WPA2-Personal,WPA-WPA2-Personal,WPA-Enterprise,WPA2-Enterprise,WPA-WPA2-Enterprise");
+    snprintf(output, 128, "None,WPA2-Personal");
     return RETURN_OK;
 }		
 
@@ -8032,7 +8033,7 @@ int main(int argc,char **argv)
 {
     int index;
     INT ret=0;
-    char buf[32];
+    char buf[1024]="";
 
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     if(argc<3)
@@ -8060,7 +8061,6 @@ int main(int argc,char **argv)
     index = atoi(argv[2]);
     if(strstr(argv[1], "wifi_getApName")!=NULL)
     {
-        char buf[32]= {'\0'};
         wifi_getApName(index,buf);
         printf("Ap name is %s \n",buf);
         return 0;
@@ -8075,7 +8075,6 @@ int main(int argc,char **argv)
     }
     if(strstr(argv[1], "wifi_getApWpaEncryptionMode")!=NULL)
     {
-        char buf[32]= {'\0'};
         wifi_getApWpaEncryptionMode(index,buf);
         printf("encryption enabled = %s\n",buf);
         return 0;
@@ -8125,7 +8124,6 @@ int main(int argc,char **argv)
     }
     else if(strstr(argv[1], "wifi_getSSIDNameStatus")!=NULL)
     {
-        char buf[32] = {'\0'};
         wifi_getSSIDNameStatus(index,buf);
         printf("%s %d: active ssid : %s\n",argv[1], index,buf);
         return 0;
@@ -8322,7 +8320,14 @@ int main(int argc,char **argv)
     if(strstr(argv[1],"wifi_getRadioIfName")!=NULL)
     {
         if((ret=wifi_getRadioIfName(index, buf))==RETURN_OK)
-            printf("Radio Interface Name:%s.\n", buf);
+            printf("%s.\n", buf);
+        else
+            printf("Error returned\n");
+    }
+    if(strstr(argv[1],"wifi_getApSecurityModesSupported")!=NULL)
+    {
+        if((ret=wifi_getApSecurityModesSupported(index, buf))==RETURN_OK)
+            printf("%s.\n", buf);
         else
             printf("Error returned\n");
     }

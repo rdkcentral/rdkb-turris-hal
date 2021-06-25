@@ -1767,8 +1767,25 @@ INT wifi_getRadioOperatingChannelBandwidth(INT radioIndex, CHAR *output_string) 
 {
     if (NULL == output_string)
         return RETURN_ERR;
+    WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
+    char cmd[1024] = {0}, buf[64] = {0};
+    char interface_name[50] = {0};
+    int ret = 0, len=0;
 
-    snprintf(output_string, 64, (radioIndex == 0) ? "20MHz" : "40MHz");
+    snprintf(cmd, sizeof(cmd),"iw dev %s%d info | grep 'width' | cut -d  ' ' -f6",AP_PREFIX, radioIndex);
+    ret = _syscmd(cmd, buf, sizeof(buf));
+    printf("the ret is %d \n",ret);
+    if(ret != 0)
+    {
+         WIFI_ENTRY_EXIT_DEBUG("failed with Command %s %s:%d\n",cmd,__func__, __LINE__);
+         return RETURN_ERR;
+    }
+
+    len= strlen(buf);
+    buf[len-1] = '\0';
+    strcat(buf,"MHz");
+    snprintf(output_string, 64, "%s", buf);
+    WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
 #if 0
     //TODO: revisit below implementation
     char output_buf[8]={0};
@@ -6196,24 +6213,40 @@ INT wifi_pushRadioChannel2(INT radioIndex, UINT channel, UINT channel_width_MHz,
     //Sample command: "hostapd_cli -i wifi0 chan_switch 30 2.437"
     char cmd[MAX_CMD_SIZE] = {0};
     char buf[MAX_BUF_SIZE] = {0};
-    int freq =0, ret = 0;
-    //char vht[4] = (radioIndex == 0)? "ht":"vht";
+    int freq = 0, offset=0;
+    char vht[4] = {0};
+
+    if(radioIndex == 0)
+        strcpy(vht,"ht");
+    else
+	strcpy(vht, "vht");
 
     WIFI_ENTRY_EXIT_DEBUG("Inside %s:%d\n",__func__, __LINE__);
     if(chan_to_freq(radioIndex, channel, &freq) == RETURN_ERR)
         return RETURN_ERR;
 
+    if(channel_width_MHz == 40)
+        offset = 1;
+
     //Send chan_switch to all VAPs
     for(int i=0; i < MAX_APS/NUMBER_OF_RADIOS; i++) {
         int apIndex = radioIndex + i*NUMBER_OF_RADIOS;
-        //snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d sec_channel_offset=1 center_freq1=%f bandwidth=%d %s", RADIO_PREFIX, radioIndex, csa_beacon_count, freq, channel_width_MHz, vht);
-        snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d ", AP_PREFIX, apIndex, csa_beacon_count, freq);
-        ret = _syscmd(cmd, buf, sizeof(buf));
+	snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d sec_channel_offset=%d bandwidth=%d %s", AP_PREFIX, apIndex, csa_beacon_count, freq,offset, channel_width_MHz, vht);
+	_syscmd(cmd, buf, sizeof(buf));
+	if(buf != "OK" && channel_width_MHz == 40) //if HT40+ fails, we try with HT40-
+	{
+	     snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d sec_channel_offset=-1 bandwidth=%d %s", AP_PREFIX, apIndex, csa_beacon_count, freq, channel_width_MHz, vht);
+	     _syscmd(cmd, buf, sizeof(buf));
+	}
+	else //Mostly fails wwith 5G channels
+	{
+             WIFI_ENTRY_EXIT_DEBUG("Failed with the Command #%s# %s:%d\n",cmd,__func__, __LINE__);
+	     return RETURN_ERR;
+	}
     }
-
-    wifi_setRadioChannel(radioIndex,channel);
+    //snprintf(cmd, sizeof(cmd), "hostapd_cli  -i %s%d chan_switch %d %d ", AP_PREFIX, apIndex, csa_beacon_count, freq);
+    //wifi_setRadioChannel(radioIndex,channel);
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);
-
     return RETURN_OK;
 }
 
@@ -8335,6 +8368,30 @@ int main(int argc,char **argv)
             printf("%s.\n", buf);
         else
             printf("Error returned\n");
+    }
+    if(strstr(argv[1],"wifi_getRadioOperatingChannelBandwidth")!=NULL)
+    {
+         if (argc <= 2)
+         {
+             printf("Insufficient arguments\n");
+             exit(-1);
+         }
+         char buf[64]= {'\0'};
+         wifi_getRadioOperatingChannelBandwidth(index,buf);
+         printf("Current bandwidth is %s \n",buf);
+    }
+
+    if(strstr(argv[1],"wifi_pushRadioChannel2")!=NULL)
+    {
+         if (argc <= 5)
+         {
+             printf("Insufficient arguments\n");
+             exit(-1);
+         }
+         int channel = atoi(argv[3]);
+         int width = atoi(argv[4]);
+         int beacon = atoi (argv[5]);
+         wifi_pushRadioChannel2(index,channel,width,beacon);
     }
 
     WIFI_ENTRY_EXIT_DEBUG("Exiting %s:%d\n",__func__, __LINE__);

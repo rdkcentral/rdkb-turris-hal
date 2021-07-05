@@ -153,3 +153,7 @@ INT platform_hal_SetSNMPOnboardRebootEnable(CHAR* pValue)
 {
 	return RETURN_OK;
 }
+INT platform_hal_GetRouterRegion(CHAR* pValue)
+{
+	return RETURN_OK;
+}

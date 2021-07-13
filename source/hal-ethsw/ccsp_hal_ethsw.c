@@ -793,3 +793,9 @@ INT CcspHalExtSw_setEthWanPort(UINT Port)
 	Port = 20;
 	return RETURN_OK;
 }
+
+INT GWP_GetEthWanLinkStatus()
+{
+    INT status = 0;
+    return status;
+}

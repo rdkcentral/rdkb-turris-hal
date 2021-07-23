@@ -34,9 +34,7 @@
 #define MACADDRESS_SIZE 6
 #define LM_ARP_ENTRY_FORMAT  "%63s %63s %63s %63s %17s %63s"
 
-#if defined(FEATURE_RDKB_WAN_MANAGER)
 #define  ETH_WAN_IFNAME   "eth0"
-#endif
 
 /**********************************************************************
                             MAIN ROUTINES

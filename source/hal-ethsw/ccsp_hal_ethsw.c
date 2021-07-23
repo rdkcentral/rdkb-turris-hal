@@ -34,6 +34,10 @@
 #define MACADDRESS_SIZE 6
 #define LM_ARP_ENTRY_FORMAT  "%63s %63s %63s %63s %17s %63s"
 
+#if defined(FEATURE_RDKB_WAN_MANAGER)
+#define  ETH_WAN_IFNAME   "eth0"
+#endif
+
 /**********************************************************************
                             MAIN ROUTINES
 **********************************************************************/
@@ -798,4 +802,24 @@ INT GWP_GetEthWanLinkStatus()
 {
     INT status = 0;
     return status;
+}
+
+void GWP_RegisterEthWan_Callback(appCallBack *obj) {
+    return;
+}
+
+INT GWP_GetEthWanInterfaceName
+(
+ unsigned char * Interface,
+ ULONG           maxSize
+)
+{
+    //Maxsize param should be minimum 4charecters(eth0) including NULL charecter
+    if( ( Interface == NULL ) || ( maxSize < ( strlen( ETH_WAN_IFNAME ) + 1 ) ) )
+    {
+        printf("ERROR: Invalid argument. \n");
+        return RETURN_ERR;
+    }
+    snprintf(Interface, maxSize, "%s", ETH_WAN_IFNAME);
+    return RETURN_OK;
 }

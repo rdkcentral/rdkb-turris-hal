@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include "wifi_hal.h"
+#include "client_wifi_hal.h"
 
 #include <ev.h>
 #include <wpa_ctrl.h>

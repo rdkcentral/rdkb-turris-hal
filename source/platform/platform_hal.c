@@ -157,3 +157,9 @@ INT platform_hal_GetRouterRegion(CHAR* pValue)
 {
 	return RETURN_OK;
 }
+
+/* Utility apis to return common parameters from firewall_lib.c */
+char *get_current_wan_ifname()
+{
+    return "0";
+}

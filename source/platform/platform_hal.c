@@ -163,3 +163,21 @@ char *get_current_wan_ifname()
 {
     return "0";
 }
+
+INT platform_hal_GetDhcpv4_Options ( dhcp_opt_list ** req_opt_list, dhcp_opt_list ** send_opt_list)
+{
+    if ((req_opt_list == NULL) || (send_opt_list == NULL))
+    {
+        return RETURN_ERR;
+    }
+    return RETURN_OK;
+}
+
+INT platform_hal_GetDhcpv6_Options ( dhcp_opt_list ** req_opt_list, dhcp_opt_list ** send_opt_list)
+{
+    if (req_opt_list == NULL)
+    {
+        return RETURN_ERR;
+    }
+    return RETURN_OK;
+}

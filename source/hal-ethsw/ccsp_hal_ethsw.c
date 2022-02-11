@@ -157,7 +157,7 @@ INT
  )
 {
     //Maxsize param should be minimum 4charecters(eth0) including NULL charecter	
-    if( ( Interface == NULL ) || ( maxSize < ( strlen( ETH_WAN_INTERFACE ) + 1 ) ) )
+    if( ( Interface == NULL ) || ( maxSize < ( strlen( ETH_WAN_IFNAME ) + 1 ) ) )
     {
         printf("ERROR: Invalid argument. \n");
         return RETURN_ERR;
@@ -197,10 +197,6 @@ CcspHalEthSwInit
     if (hal_init_done) {
         return RETURN_OK;
     }
-
-    // Initialize callback function pointers.
-    ethWanCallbacks.pGWP_act_EthWanLinkUP = NULL;
-    ethWanCallbacks.pGWP_act_EthWanLinkDown = NULL;
 
     // Create thread to handle async events and callbacks.
     rc = pthread_create(&ethsw_tid, NULL, ethsw_thread_main, NULL);

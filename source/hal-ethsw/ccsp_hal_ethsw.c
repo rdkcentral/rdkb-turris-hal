@@ -674,8 +674,6 @@ void GetInterfaceName(char *interface_name, char *conf_file)
                         interface_name[count] = output_string[count];
         interface_name[count]='\0';
 
-        fprintf(stderr,"Interface name %s \n", interface_name);
-
         pclose(fp);
 }
 /* CcspHalExtSw_getAssociatedDevice :  */
@@ -727,7 +725,6 @@ INT CcspHalExtSw_getAssociatedDevice(ULONG *output_array_size, eth_device_t **ou
 	{
 		fgets(buf,MAX_BUF_SIZE,fp);
 		maccount = atol(buf);
-		fprintf(stderr,"ethernet umac is %d \n",maccount);
 	}
 	pclose(fp);
 	eth_device_t *temp=NULL;

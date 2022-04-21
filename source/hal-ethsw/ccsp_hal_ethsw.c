@@ -28,7 +28,6 @@
 
 #include "ccsp_hal_ethsw.h" 
 
-
 /**********************************************************************
                     DEFINITIONS
 **********************************************************************/
@@ -37,9 +36,11 @@
 #define MAX_BUF_SIZE 1024
 #define MACADDRESS_SIZE 6
 #define ETH_WAN_INTERFACE  "erouter0"
+#define ETH_WAN_IFNAME   "eth2"
 #define LM_ARP_ENTRY_FORMAT  "%63s %63s %63s %63s %17s %63s"
+#define PRIVATE_WIFI_INTERFACE_2G "wifi0"
+#define PRIVATE_WIFI_INTERFACE_5G "wifi1"
 
-#define  ETH_WAN_IFNAME   "eth0"
 
 #if defined(FEATURE_RDKB_WAN_MANAGER)
 static pthread_t ethsw_tid;
@@ -47,7 +48,6 @@ static int hal_init_done = 0;
 appCallBack ethWanCallbacks;
 #define  ETH_INITIALIZE  "/tmp/ethagent_initialized"
 #define  LINK_VALUE_SIZE  50
-#define  ETH_WAN_IFNAME   "eth2"
 #endif
 
 /**********************************************************************
@@ -638,44 +638,6 @@ CcspHalEthSwLocatePortByMacAddress
     return  RETURN_OK;
 }
 
-//For Getting Current Interface Name from corresponding hostapd configuration
-void GetInterfaceName(char *interface_name, char *conf_file)
-{
-        FILE *fp = NULL;
-        char path[MAX_BUF_SIZE] = {0},output_string[MAX_BUF_SIZE] = {0},fname[MAX_BUF_SIZE] = {0};
-        int count = 0;
-        char *interface = NULL;
-
-        fp = fopen(conf_file, "r");
-        if(fp == NULL)
-        {
-                printf("conf_file %s not exists \n", conf_file);
-                return;
-        }
-        fclose(fp);
-
-        sprintf(fname,"%s%s%s","cat ",conf_file," | grep interface=");
-        fp = popen(fname,"r");
-        if(fp == NULL)
-        {
-                        printf("Failed to run command in Function %s\n",__FUNCTION__);
-                        strcpy(interface_name, "");
-                        return;
-        }
-        if(fgets(path, sizeof(path)-1, fp) != NULL)
-        {
-                        interface = strchr(path,'=');
-
-                        if(interface != NULL)
-                                strcpy(output_string, interface+1);
-        }
-
-        for(count = 0;output_string[count]!='\n';count++)
-                        interface_name[count] = output_string[count];
-        interface_name[count]='\0';
-
-        pclose(fp);
-}
 /* CcspHalExtSw_getAssociatedDevice :  */
 /**
 * @description Collected the active wired clients information
@@ -710,11 +672,9 @@ INT CcspHalExtSw_getAssociatedDevice(ULONG *output_array_size, eth_device_t **ou
 	}
 	system("cat /nvram/dnsmasq.leases | cut -d ' ' -f2 > /tmp/connected_mac.txt"); //storing the all associated device information in tmp folder
 	//storing the private wifi  associated device iformation in tmp folder
-	GetInterfaceName(interface_name,"/nvram/hostapd0.conf");
-	sprintf(buf,"iw dev %s station dump | grep Station | cut -d ' ' -f2 > /tmp/Associated_Devices.txt",interface_name);
+	sprintf(buf,"iw dev %s station dump | grep Station | cut -d ' ' -f2 > /tmp/Associated_Devices.txt", PRIVATE_WIFI_INTERFACE_2G);
 	system(buf);
-	GetInterfaceName(interface_name,"/nvram/hostapd1.conf");
-	sprintf(buf,"iw dev %s station dump | grep Station | cut -d ' ' -f2 >> /tmp/Associated_Devices.txt",interface_name);
+	sprintf(buf,"iw dev %s station dump | grep Station | cut -d ' ' -f2 >> /tmp/Associated_Devices.txt", PRIVATE_WIFI_INTERFACE_5G);
 	system(buf);
 
 	system("diff /tmp/Associated_Devices.txt /tmp/connected_mac.txt | grep \"^+\" | cut -c2- | sed -n '1!p' > /tmp/ethernet_connected_clients.txt"); //separating the ethernet associated device information from connected_mac test file

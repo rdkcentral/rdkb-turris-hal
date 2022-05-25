@@ -25,6 +25,43 @@
 
 /* Note that 0 == RETURN_OK == STATUS_OK    */
 /* Note that -1 == RETURN_ERR == STATUS_NOK */
+#define MAX_CMD_SIZE 512
+#define MAX_BUF_SIZE 256
+
+static int _syscmd(char *cmd, char *buf, int size)
+{
+    FILE *fp;
+    char *ptr = buf;
+    int bufsize=size, bufbytes=0, readbytes=0, cmd_ret=0;
+
+    if((fp = popen(cmd, "r")) == NULL) {
+        fprintf(stderr,"\npopen %s error\n", cmd);
+        return RETURN_ERR;
+    }
+
+    while(!feof(fp))
+    {
+        *ptr = 0;
+        if(bufsize>=128) {
+            bufbytes=128;
+        } else {
+            bufbytes=bufsize-1;
+        }
+
+        fgets(ptr,bufbytes,fp);
+        readbytes=strlen(ptr);
+
+        if(!readbytes)
+            break;
+
+        bufsize-=readbytes;
+        ptr += readbytes;
+    }
+    buf[bufsize-1]=0;
+    cmd_ret = pclose(fp);
+
+    return cmd_ret >> 8;
+}
 
 INT platform_hal_GetDeviceConfigStatus(CHAR *pValue) { strcpy(pValue, "Complete"); return RETURN_OK; }
 
@@ -49,8 +86,25 @@ INT platform_hal_GetSoftwareVersion(CHAR* pValue, ULONG maxSize) { strcpy(pValue
 INT platform_hal_GetBootloaderVersion(CHAR* pValue, ULONG maxSize) { strcpy(pValue, "Bootloader Version"); return RETURN_OK; }
 INT platform_hal_GetFirmwareName(CHAR* pValue, ULONG maxSize) { strcpy(pValue, "Firmware Name"); return RETURN_OK; }
 INT platform_hal_GetBaseMacAddress(CHAR *pValue) { strcpy(pValue, "BasMac"); return RETURN_OK; }
-INT platform_hal_GetHardware(CHAR *pValue) { strcpy(pValue, "Hard"); return RETURN_OK; }
 INT platform_hal_GetTotalMemorySize(ULONG *pulSize) { *pulSize = 512*1024; return RETURN_OK; }
+
+INT platform_hal_GetHardware(CHAR *pValue)
+{
+    char cmd[MAX_CMD_SIZE], output[MAX_BUF_SIZE];
+    unsigned long flash_size_bytes, flash_size_mb;
+
+    if (!pValue)
+        return RETURN_ERR;
+
+    //Getting the number of sectors
+    snprintf(cmd, sizeof(cmd), "cat /sys/block/mmcblk0/size");
+    _syscmd(cmd, output, sizeof(output));
+    flash_size_bytes = atol(output)*512;
+    flash_size_mb= flash_size_bytes/(1024*1024);
+    snprintf(pValue, 16, "%lu", flash_size_mb);
+
+    return RETURN_OK;
+}
 
 INT platform_hal_GetHardware_MemUsed(CHAR *pValue)
 {

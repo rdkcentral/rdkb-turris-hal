@@ -63,6 +63,10 @@ static int _syscmd(char *cmd, char *buf, int size)
     return cmd_ret >> 8;
 }
 
+#define DEVICE_TYPE_NONE     0
+#define DEVICE_TYPE_GATEWAY  1
+#define DEVICE_TYPE_EXTENDER 2
+
 INT platform_hal_GetDeviceConfigStatus(CHAR *pValue) { strcpy(pValue, "Complete"); return RETURN_OK; }
 
 INT platform_hal_GetTelnetEnable(BOOLEAN *pFlag) { *pFlag = FALSE; return RETURN_OK; }
@@ -79,13 +83,92 @@ INT platform_hal_SetWebAccessLevel(INT userIndex, INT ifIndex, ULONG value) { re
 
 INT platform_hal_PandMDBInit(void) { return RETURN_OK; }
 INT platform_hal_DocsisParamsDBInit(void) { return RETURN_OK; }
-INT platform_hal_GetModelName(CHAR* pValue) { strcpy(pValue, "Model Name"); return RETURN_OK; }
-INT platform_hal_GetSerialNumber(CHAR* pValue) { strcpy(pValue, "Serial Number"); return RETURN_OK; }
+
+static int getDeviceType()
+{
+    int deviceType = DEVICE_TYPE_GATEWAY;
+    const char *cmd = "cat /version.txt | grep imagename | cut -d':' -f2 | cut -d'-' -f3";
+    FILE *fp = popen(cmd, "r");
+    if (fp)
+    {
+       char buf[64] = {0};
+        fgets(buf, sizeof(buf), fp);
+        if (strstr(buf, "extender"))
+       {
+            deviceType = DEVICE_TYPE_EXTENDER;
+       }
+        pclose(fp);
+    }
+    return deviceType;
+}
+
+INT platform_hal_GetModelName(CHAR* pValue)
+{
+    if (pValue)
+    {
+        const char *src = (getDeviceType() == DEVICE_TYPE_EXTENDER)
+            ? "RTROM01-2G-EX"
+            : "RTROM01-2G";
+
+       strcpy(pValue, src);
+        return RETURN_OK;
+    }
+    return RETURN_ERR;
+}
+
+INT platform_hal_GetSerialNumber(CHAR* pValue)
+{
+    if (pValue)
+    {
+        const char *src = (getDeviceType() == DEVICE_TYPE_EXTENDER)
+            ? "5544332211"
+            : "1122334455";
+
+        strcpy(pValue, src);
+        return RETURN_OK;
+    }
+    return RETURN_ERR;
+}
+
 INT platform_hal_GetHardwareVersion(CHAR* pValue) { strcpy(pValue, "Hardware Version"); return RETURN_OK; }
 INT platform_hal_GetSoftwareVersion(CHAR* pValue, ULONG maxSize) { strcpy(pValue, "Software Version"); return RETURN_OK; }
 INT platform_hal_GetBootloaderVersion(CHAR* pValue, ULONG maxSize) { strcpy(pValue, "Bootloader Version"); return RETURN_OK; }
-INT platform_hal_GetFirmwareName(CHAR* pValue, ULONG maxSize) { strcpy(pValue, "Firmware Name"); return RETURN_OK; }
-INT platform_hal_GetBaseMacAddress(CHAR *pValue) { strcpy(pValue, "BasMac"); return RETURN_OK; }
+
+INT platform_hal_GetFirmwareName(CHAR* pValue, ULONG maxSize)
+{
+    if (pValue != NULL && maxSize > 0)
+    {
+        snprintf(pValue, maxSize, "%s", "rdk-yocto-turris-1");
+        return RETURN_OK;
+    }
+    return RETURN_ERR;
+}
+
+INT platform_hal_GetBaseMacAddress(CHAR *pValue)
+{
+    if (pValue)
+    {
+        const char *path = "/sys/class/net/eth1/address";
+        FILE *fp = fopen(path, "r");
+        if (fp)
+        {
+            char *end;
+            char buf[64] = {0};
+            fgets(buf, sizeof(buf), fp);
+            fclose(fp);
+
+            end = strchr(buf, '\n');
+            if (end)
+            {
+                *end = '\0';
+            }
+            strcpy(pValue, buf);
+            return RETURN_OK;
+        }
+    }
+    return RETURN_ERR;
+}
+
 INT platform_hal_GetTotalMemorySize(ULONG *pulSize) { *pulSize = 512*1024; return RETURN_OK; }
 
 INT platform_hal_GetHardware(CHAR *pValue)
@@ -184,12 +267,7 @@ INT platform_hal_SetDeviceCodeImageValid(BOOLEAN flag)
 
 INT platform_hal_getCMTSMac(CHAR *pValue)
 {
-     if (pValue == NULL)
-     {
-         return RETURN_ERR;
-     }
-    strcpy(pValue,"00:00:00:00:00:00");
-    return RETURN_OK;
+	return platform_hal_GetBaseMacAddress(pValue);
 }
 
 /* platform_hal_SetSNMPOnboardRebootEnable() function */

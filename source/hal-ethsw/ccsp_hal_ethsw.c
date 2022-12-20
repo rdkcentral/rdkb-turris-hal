@@ -25,6 +25,7 @@
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <stdbool.h>
+#include <pthread.h>
 
 #include "ccsp_hal_ethsw.h" 
 
@@ -70,68 +71,58 @@ int is_interface_exists(const char *fname)
 #if defined(FEATURE_RDKB_WAN_MANAGER)
 void *ethsw_thread_main(void *context __attribute__((unused)))
 {
-   FILE *fp = NULL;
-   char command[128] = {0};
-   char* buff = NULL, *pLink;
-   char previousLinkDetected[10]="no";
-   int timeout = 0;
-   int file = 0;
+    FILE *fp = NULL;
+    char cmd[128], buff[LINK_VALUE_SIZE], *pLink, *previousLinkDetected = "no";
+    int retries = 180;
 
-   buff = malloc(sizeof(char)*50);
-   if(buff == NULL)
+    memset(cmd, 0, sizeof(cmd));
+    snprintf(cmd, sizeof(cmd),
+        "ethtool erouter0 | grep \"Link detected\" | cut -d ':' -f2 | cut -d ' ' -f2");
+    while(retries--)
     {
-        return (void *) 1;
-    }
-
-   while(timeout != 180)
-    {
-       if (file == access(ETH_INITIALIZE, R_OK))
-       {
-            CcspHalEthSwTrace(("Eth agent initialized \n"));
-            break;
-       }
-       else
-       {
-           timeout = timeout+1;
-           sleep(1);
-       }
-    }
-
-   while(1)
-    {
-        memset(buff,0,sizeof(buff));
-        snprintf(command,128, "ethtool erouter0 | grep \"Link detected\" | cut -d ':' -f2 | cut -d ' ' -f2");
-        fp = popen(command, "r");
-          if (fp == NULL)
-          {
-                continue;
-          }
-          while (fgets(buff, LINK_VALUE_SIZE, fp) != NULL)
-          {
-                pLink = strchr(buff, '\n');
-                if(pLink)
-                    *pLink = '\0';
-          }
-          pclose(fp);
-        if (strcmp(buff, (const char *)previousLinkDetected))
+        if (!access(ETH_INITIALIZE, R_OK))
         {
-            if (strcmp(buff, "yes") == 0)
-	    {
-		CcspHalEthSwTrace(("send_link_event: Got Link UP Event\n"));
-                ethWanCallbacks.pGWP_act_EthWanLinkUP();    
-            }
-            else
-            {
-		 CcspHalEthSwTrace(("send_link_event: Got Link DOWN Event\n"));
-                 ethWanCallbacks.pGWP_act_EthWanLinkDown();   
-            }
-            memset(previousLinkDetected, 0, sizeof(previousLinkDetected));
-            strcpy((char *)previousLinkDetected, buff);
+            CcspHalEthSwTrace(("EthAgent initialized\n"));
+            break;
         }
-        sleep(5);
+        sleep(1);
     }
-    if(buff != NULL)
-        free(buff);
+
+    while(1)
+    {
+        memset(buff, 0, sizeof(buff));
+        fp = popen(cmd, "r");
+        if (fp == NULL)
+            continue;
+        if (fgets(buff, LINK_VALUE_SIZE, fp)) //output of command will be either 1 line or none
+        {
+            if((pLink = strchr(buff, '\n')))
+                *pLink = '\0';
+        }
+        pclose(fp);
+        if (!*buff)
+            continue;
+
+        if (!strcmp(buff, previousLinkDetected))
+        {
+            //CcspHalEthSwTrace(("Sleeping for just 2 sec in thread\n"));
+            sleep(2);
+            continue;
+        }
+        if (!strcmp(buff, "yes"))
+        {
+            CcspHalEthSwTrace(("send_link_event: Got Link UP Event\n"));
+            ethWanCallbacks.pGWP_act_EthWanLinkUP();
+            previousLinkDetected = "yes";
+        }
+        else
+        {
+            CcspHalEthSwTrace(("send_link_event: Got Link DOWN Event\n"));
+            ethWanCallbacks.pGWP_act_EthWanLinkDown();
+            previousLinkDetected = "no";
+        }
+    }
+
     return NULL;
 }
 

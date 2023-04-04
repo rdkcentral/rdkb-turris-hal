@@ -313,3 +313,8 @@ INT platform_hal_GetDhcpv6_Options ( dhcp_opt_list ** req_opt_list, dhcp_opt_lis
     }
     return RETURN_OK;
 }
+
+INT platform_hal_GetFirmwareBankInfo(FW_BANK bankIndex, PFW_BANK_INFO pFW_Bankinfo)
+{
+    return RETURN_OK;
+}

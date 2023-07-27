@@ -318,3 +318,8 @@ INT platform_hal_GetFirmwareBankInfo(FW_BANK bankIndex, PFW_BANK_INFO pFW_Bankin
 {
     return RETURN_OK;
 }
+
+INT platform_hal_GetInterfaceStats(const char *ifname,PINTF_STATS pIntfStats)
+{
+    return RETURN_OK;
+}
